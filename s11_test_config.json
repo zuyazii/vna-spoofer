@@ -1,0 +1,29 @@
+{
+  "_template": "s11_test",
+  "_description": "S11 test configuration",
+  "frequency": {
+    "start": 1000000.0,
+    "stop": 6000000000.0,
+    "points": 201
+  },
+  "thresholds": {
+    "pass_db": -10.0,
+    "fail_db": -5.0
+  },
+  "measurement": {
+    "ifbw": 1000,
+    "power_level": -10.0,
+    "averaging": 1
+  },
+  "calibration": {
+    "enabled": true,
+    "file": null
+  },
+  "output": {
+    "formats": [
+      "json",
+      "csv"
+    ],
+    "directory": "output"
+  }
+}
