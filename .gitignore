@@ -6,6 +6,18 @@ __pycache__/
 # C extensions
 *.so
 
+# C++ build artifacts
+*.o
+*.obj
+*.a
+*.lib
+*.exe
+*.out
+*.app
+vna-cli/build/
+vna-cli/bin/
+vna-cli/lib/
+
 # Distribution / packaging
 .Python
 build/
