@@ -28,5 +28,6 @@ Usage:
 
 from .librevna import LibreVNA
 from .device_manager import DeviceManager
+from .headless_cli import HeadlessLibreVNA, HeadlessLibreVNAResult
 
-__all__ = ["LibreVNA", "DeviceManager"]
+__all__ = ["LibreVNA", "DeviceManager", "HeadlessLibreVNA", "HeadlessLibreVNAResult"]

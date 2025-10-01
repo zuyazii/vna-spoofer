@@ -34,9 +34,9 @@ import sys
 import json
 import yaml
 import os
-from typing import Optional
+from typing import List, Optional
 from pathlib import Path
-from src.librevna.device import LibreVNA, DeviceManager
+from src.librevna.device import DeviceManager, HeadlessLibreVNA, LibreVNA
 from src.librevna.measure import S11Test, S11TestConfig
 from src.librevna.config import ConfigManager, ConfigFormat
 from src.librevna.output import JSONGenerator, CSVGenerator, TouchstoneGenerator, LogGenerator, OutputConfig
@@ -745,6 +745,67 @@ def batch(ctx, config, output_dir, verbose):
             import traceback
             traceback.print_exc()
         sys.exit(1)
+
+
+@cli.command(name="headless-sweep")
+@click.option('--cal', type=click.Path(exists=True, path_type=Path), required=True, help='Calibration file (.cal)')
+@click.option('--serial', type=str, help='Device serial number to target')
+@click.option('--start-freq', type=FrequencyParamType(), required=True, help='Start frequency in GHz (converted to Hz)')
+@click.option('--stop-freq', type=FrequencyParamType(), required=True, help='Stop frequency in GHz (converted to Hz)')
+@click.option('--points', type=int, required=True, help='Number of sweep points')
+@click.option('--ifbw', type=float, required=True, help='IF bandwidth in Hz')
+@click.option('--power', type=float, default=-10.0, show_default=True, help='Source power in dBm')
+@click.option('--threshold', type=float, default=-10.0, show_default=True, help='Pass/fail threshold in dB')
+@click.option('--excite', type=str, default='1,2', show_default=True, help='Comma-separated excited ports')
+@click.option('--timeout-ms', type=float, default=15000.0, show_default=True, help='Timeout in milliseconds')
+@click.option('--progress', is_flag=True, help='Stream NDJSON progress to stderr')
+@click.option('--json-dir', type=click.Path(path_type=Path), help='Directory to preserve the generated JSON payload')
+def headless_sweep(cal, serial, start_freq, stop_freq, points, ifbw, power, threshold, excite, timeout_ms, progress, json_dir):
+    """Run a sweep using the native librevna-cli binary."""
+
+    def parse_ports(raw: str) -> List[int]:
+        ports: List[int] = []
+        for item in raw.split(','):
+            item = item.strip()
+            if not item:
+                continue
+            try:
+                ports.append(int(item))
+            except ValueError as exc:
+                raise click.BadParameter(f"Invalid port '{item}' in --excite") from exc
+        if not ports:
+            raise click.BadParameter("At least one port must be provided via --excite")
+        return ports
+
+    try:
+        runner = HeadlessLibreVNA()
+    except FileNotFoundError as exc:
+        click.echo(f"Error: {exc}", err=True)
+        sys.exit(2)
+
+    ports = parse_ports(excite)
+
+    try:
+        result = runner.run_sweep(
+            cal=cal,
+            f_start=start_freq,
+            f_stop=stop_freq,
+            points=points,
+            if_bandwidth=ifbw,
+            power_dbm=power,
+            threshold_db=threshold,
+            serial=serial,
+            timeout_ms=timeout_ms,
+            excited_ports=ports,
+            progress=progress,
+            output_dir=json_dir,
+        )
+    except Exception as exc:
+        click.echo(f"Headless sweep failed: {exc}", err=True)
+        sys.exit(3)
+
+    click.echo(json.dumps(result.raw, indent=2))
+    sys.exit(0 if result.overall_pass else 1)
 
 
 if __name__ == '__main__':

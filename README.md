@@ -17,6 +17,7 @@ LibreVNA CLI provides a Python-based command-line interface for communicating wi
 - **CLI Interface**: Easy-to-use command-line interface
 - **Cross-Platform**: Works on Windows, macOS, and Linux
 - **WinUSB Driver Support**: Optimized for Windows WinUSB drivers
+- **Headless Sweep Engine**: Optional C++ binary (`librevna-cli`) for calibrated sweeps with JSON output
 
 ## Installation
 
@@ -73,6 +74,42 @@ python cli.py test
 python cli.py version
 ```
 
+### Headless Sweep via C++ Binary
+
+The repository now ships with a C++ project (`cpp/`) that builds a small
+`librevna-cli` executable. Python remains the orchestration layer, invoking the
+binary to perform fully calibrated sweeps and parsing the JSON response.
+
+```bash
+# Configure & build the C++ project (requires CMake, a C++17 compiler, Qt, libusb)
+cmake -S cpp -B cpp/build
+cmake --build cpp/build --config Release
+
+# Run a headless sweep from Python (frequencies in GHz)
+python cli.py headless-sweep \
+  --cal Calibration/my_calibration.cal \
+  --start-freq 0.001 \
+  --stop-freq 3.0 \
+  --points 201 \
+  --ifbw 1000 \
+  --power -10 \
+  --threshold -10
+
+# Or call the native binary directly
+cpp/build/librevna-cli --cal Calibration/my_calibration.cal --fstart 1e6 --fstop 3e9 \
+  --points 201 --ifbw 1000 --power -10 --threshold -10
+```
+
+The Python wrapper automatically locates the binary (respecting the
+`LIBREVNA_CLI_BIN` environment variable) and raises informative errors if the
+executable is missing.
+
+> **Note:** The default build uses a stub host core that simulates sweeps so the
+> CLI can be exercised without hardware. When the official LibreVNA host stack
+> is available, configure CMake with
+> `-DLIBREVNA_HEADLESS_ENABLE_REAL_DRIVER=ON` to compile against the vendored
+> sources and link Qt/libusb for live measurements.
+
 ### Command Options
 
 ```bash
@@ -93,6 +130,7 @@ librevna-cli/
 │   ├── device/              # Device management
 │   ├── transport/           # Transport layer (USB, TCP)
 │   └── protocol/            # Protocol parsing and generation
+├── cpp/                     # Headless C++ project (librevna-cli binary)
 ├── cli.py                   # Command-line interface
 ├── setup.py                 # Package setup
 ├── requirements.txt         # Core dependencies
