@@ -34,9 +34,11 @@ import sys
 import json
 import yaml
 import os
+import math
+import csv
 from typing import List, Optional
 from pathlib import Path
-from src.librevna.device import DeviceManager, HeadlessLibreVNA, LibreVNA
+from src.librevna.device import DeviceManager, HeadlessLibreVNA, HeadlessLibreVNAResult, LibreVNA
 from src.librevna.measure import S11Test, S11TestConfig
 from src.librevna.config import ConfigManager, ConfigFormat
 from src.librevna.output import JSONGenerator, CSVGenerator, TouchstoneGenerator, LogGenerator, OutputConfig
@@ -759,7 +761,7 @@ def batch(ctx, config, output_dir, verbose):
 @click.option('--excite', type=str, default='1,2', show_default=True, help='Comma-separated excited ports')
 @click.option('--timeout-ms', type=float, default=15000.0, show_default=True, help='Timeout in milliseconds')
 @click.option('--progress', is_flag=True, help='Stream NDJSON progress to stderr')
-@click.option('--json-dir', type=click.Path(path_type=Path), help='Directory to preserve the generated JSON payload')
+@click.option('--json-dir', type=click.Path(path_type=Path), help='Directory to store generated output files')
 def headless_sweep(cal, serial, start_freq, stop_freq, points, ifbw, power, threshold, excite, timeout_ms, progress, json_dir):
     """Run a sweep using the native librevna-cli binary."""
 
@@ -798,14 +800,97 @@ def headless_sweep(cal, serial, start_freq, stop_freq, points, ifbw, power, thre
             timeout_ms=timeout_ms,
             excited_ports=ports,
             progress=progress,
-            output_dir=json_dir,
         )
     except Exception as exc:
         click.echo(f"Headless sweep failed: {exc}", err=True)
         sys.exit(3)
 
-    click.echo(json.dumps(result.raw, indent=2))
+    base_output_dir = json_dir if json_dir else Path("output")
+    _store_headless_outputs(result, base_output_dir)
+
+    summary = _summarize_headless_result(result)
+    click.echo(json.dumps(summary))
+
     sys.exit(0 if result.overall_pass else 1)
+
+
+def _store_headless_outputs(result: HeadlessLibreVNAResult, base_output_dir: Path) -> None:
+    """Persist headless sweep outputs as JSON and CSV in structured folders."""
+
+    output_config = OutputConfig.create_with_shared_timestamp(
+        output_directory=str(base_output_dir),
+        file_prefix="headless_sweep"
+    )
+
+    timestamp = output_config.shared_timestamp
+    base_name = "result"
+    subdir_name = f"{output_config.file_prefix}_{base_name}_{timestamp}"
+    subdir_path = Path(output_config.output_directory) / subdir_name
+    subdir_path.mkdir(parents=True, exist_ok=True)
+
+    filename_base = f"{output_config.file_prefix}_{base_name}_{timestamp}"
+    json_path = subdir_path / f"{filename_base}.json"
+    csv_path = subdir_path / f"{filename_base}.csv"
+
+    with json_path.open('w', encoding='utf-8') as json_file:
+        json.dump(result.raw, json_file, indent=2)
+
+    _write_headless_csv(result, csv_path)
+
+
+def _write_headless_csv(result: HeadlessLibreVNAResult, csv_path: Path) -> None:
+    """Write CSV representation of headless sweep trace data."""
+
+    parameter_names = sorted(result.parameter_results.keys())
+
+    with csv_path.open('w', newline='', encoding='utf-8') as csv_file:
+        writer = csv.writer(csv_file)
+
+        header = ["Frequency (Hz)"]
+        for name in parameter_names:
+            header.extend([
+                f"{name}_Real", f"{name}_Imag",
+                f"{name}_Magnitude_dB", f"{name}_Phase_deg"
+            ])
+        writer.writerow(header)
+
+        for point in result.trace:
+            frequency = point.get("frequency", "")
+            row = [frequency]
+            for name in parameter_names:
+                value = point.get(name, {})
+                real = value.get("real")
+                imag = value.get("imag")
+                if real is None or imag is None:
+                    row.extend(["", "", "", ""])
+                    continue
+
+                magnitude = math.hypot(real, imag)
+                magnitude_db = 20 * math.log10(max(magnitude, 1e-12))
+                phase_deg = math.degrees(math.atan2(imag, real))
+                row.extend([real, imag, magnitude_db, phase_deg])
+
+            writer.writerow(row)
+
+
+def _summarize_headless_result(result: HeadlessLibreVNAResult) -> dict:
+    """Build concise summary of pass/fail status and failed points."""
+
+    failures = []
+    for name, data in result.parameter_results.items():
+        if not data.get("pass", False):
+            failure_entry = {"parameter": name}
+            if "fail_at_hz" in data and data["fail_at_hz"] is not None:
+                failure_entry["frequency_hz"] = data["fail_at_hz"]
+            if "worst_db" in data and data["worst_db"] is not None:
+                failure_entry["worst_db"] = data["worst_db"]
+            failures.append(failure_entry)
+
+    summary = {"status": "pass" if result.overall_pass else "fail"}
+    if failures:
+        summary["failed_points"] = failures
+
+    return summary
 
 
 if __name__ == '__main__':

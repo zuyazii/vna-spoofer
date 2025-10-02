@@ -1,7 +1,7 @@
 #pragma once
 
 #include "cli_options.hpp"
-#include "librevna_headless/stub_host_core.hpp"
+#include "librevna_headless/host_core.hpp"
 
 #include <map>
 #include <optional>
@@ -24,6 +24,6 @@ struct SweepSummary
 };
 
 SweepSummary evaluate_sweep(const CLIOptions &options,
-                            const std::vector<StubVNAMeasurement> &measurements);
+                            const std::vector<VNAMeasurement> &measurements);
 
 } // namespace librevna::headless

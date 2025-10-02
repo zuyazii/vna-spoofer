@@ -4,7 +4,9 @@
 #include <cstdint>
 #include <filesystem>
 #include <map>
+#include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace librevna::headless
@@ -17,26 +19,38 @@ struct SweepConfiguration
     double if_bandwidth_hz = 0.0;
     double power_dbm = 0.0;
     double timeout_ms = 0.0;
+    std::vector<int> excited_ports;
 };
 
-struct StubVNAMeasurement
+struct VNAMeasurement
 {
-    StubVNAMeasurement(double frequency_hz,
-                       std::complex<double> s11,
-                       std::complex<double> s21,
-                       std::complex<double> s12,
-                       std::complex<double> s22);
+    VNAMeasurement() = default;
+    VNAMeasurement(double frequency_hz,
+                   std::map<std::string, std::complex<double>> parameters)
+        : frequency(frequency_hz),
+          parameters(std::move(parameters))
+    {
+    }
 
-    double frequency;
+    double frequency = 0.0;
     std::map<std::string, std::complex<double>> parameters;
 
-    [[nodiscard]] std::complex<double> get(const std::string &key) const;
+    [[nodiscard]] std::complex<double> get(const std::string &key) const
+    {
+        auto it = parameters.find(key);
+        if(it == parameters.end())
+        {
+            return {};
+        }
+        return it->second;
+    }
 };
 
-class StubHostCore
+class HostCore
 {
 public:
-    StubHostCore();
+    HostCore();
+    ~HostCore();
 
     bool connect(const std::string &serial);
     void disconnect();
@@ -45,14 +59,13 @@ public:
     bool load_calibration(const std::filesystem::path &path);
     [[nodiscard]] std::filesystem::path calibration_file() const;
 
-    std::vector<StubVNAMeasurement> run_sweep(const SweepConfiguration &config);
+    std::vector<VNAMeasurement> run_sweep(const SweepConfiguration &config);
 
     [[nodiscard]] std::string last_error_message() const;
 
 private:
-    bool connected = false;
-    std::filesystem::path calibration_path;
-    std::string last_error;
+    struct Impl;
+    std::unique_ptr<Impl> impl;
 };
 
 } // namespace librevna::headless

@@ -19,7 +19,7 @@ double magnitude_to_db(std::complex<double> value)
 } // namespace
 
 SweepSummary evaluate_sweep(const CLIOptions &options,
-                            const std::vector<StubVNAMeasurement> &measurements)
+                            const std::vector<VNAMeasurement> &measurements)
 {
     SweepSummary summary;
     summary.parameter_results = {

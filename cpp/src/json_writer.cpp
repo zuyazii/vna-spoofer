@@ -1,12 +1,13 @@
 #include "json_writer.hpp"
 
 #include <fstream>
+#include <utility>
 
 namespace librevna::headless
 {
 JsonOutput build_json_payload(const CLIOptions &options,
                               const SweepSummary &summary,
-                              const std::vector<StubVNAMeasurement> &measurements)
+                              const std::vector<VNAMeasurement> &measurements)
 {
     nlohmann::json payload;
     payload["device"] = {

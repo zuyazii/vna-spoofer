@@ -30,7 +30,7 @@ void emit_progress(std::ostream &stream,
 
 int run_cli(const CLIOptions &options)
 {
-    StubHostCore host;
+    HostCore host;
     if(!host.connect(options.serial.value_or("")))
     {
         nlohmann::json error = {
@@ -59,6 +59,7 @@ int run_cli(const CLIOptions &options)
     configuration.if_bandwidth_hz = options.ifbw_hz;
     configuration.power_dbm = options.power_dbm;
     configuration.timeout_ms = options.timeout_ms;
+    configuration.excited_ports = options.excited_ports;
 
     auto measurements = host.run_sweep(configuration);
 

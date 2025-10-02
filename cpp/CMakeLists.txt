@@ -5,48 +5,51 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-option(LIBREVNA_HEADLESS_ENABLE_REAL_DRIVER "Enable building against the official LibreVNA host stack" OFF)
+option(LIBREVNA_HEADLESS_ENABLE_REAL_DRIVER "Build the headless CLI with the real LibreVNA USB host implementation" ON)
+
+set(LIBREVNA_HEADLESS_USE_REAL_DRIVER ${LIBREVNA_HEADLESS_ENABLE_REAL_DRIVER})
+
+if(LIBREVNA_HEADLESS_USE_REAL_DRIVER)
+    find_path(LIBUSB_INCLUDE_DIR
+        NAMES libusb-1.0/libusb.h libusb.h)
+    find_library(LIBUSB_LIBRARY
+        NAMES usb-1.0 libusb-1.0 libusb)
+    if(NOT LIBUSB_INCLUDE_DIR OR NOT LIBUSB_LIBRARY)
+        message(WARNING "libusb-1.0 not found; falling back to stub host core. Set LIBUSB_INCLUDE_DIR and LIBUSB_LIBRARY to enable the real driver.")
+        set(LIBREVNA_HEADLESS_USE_REAL_DRIVER OFF)
+    endif()
+endif()
 
 add_library(librevna_host_core STATIC)
 
-if(LIBREVNA_HEADLESS_ENABLE_REAL_DRIVER)
-    find_package(Qt6 COMPONENTS Core Widgets REQUIRED)
-    find_package(libusb-1.0 REQUIRED)
-    find_package(nlohmann_json CONFIG REQUIRED)
+target_include_directories(librevna_host_core
+    PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
 
+if(LIBREVNA_HEADLESS_USE_REAL_DRIVER)
     target_sources(librevna_host_core
         PRIVATE
-            ${CMAKE_CURRENT_SOURCE_DIR}/../third_party/librevna_protocol/calibration.cpp
-            ${CMAKE_CURRENT_SOURCE_DIR}/../third_party/librevna_protocol/calkit.cpp
-            ${CMAKE_CURRENT_SOURCE_DIR}/../third_party/librevna_protocol/calstandard.cpp
-            ${CMAKE_CURRENT_SOURCE_DIR}/../third_party/librevna_protocol/devicedriver.cpp
-            ${CMAKE_CURRENT_SOURCE_DIR}/../third_party/librevna_protocol/librevnadriver.cpp
-            ${CMAKE_CURRENT_SOURCE_DIR}/../third_party/librevna_protocol/librevnausbdriver.cpp
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/host_core_real.cpp
+            ${CMAKE_CURRENT_SOURCE_DIR}/../third_party/librevna_protocol/Protocol.cpp
     )
 
     target_include_directories(librevna_host_core
-        PUBLIC
+        PRIVATE
             ${CMAKE_CURRENT_SOURCE_DIR}/../third_party/librevna_protocol
+            ${LIBUSB_INCLUDE_DIR}
     )
 
     target_link_libraries(librevna_host_core
         PUBLIC
-            Qt6::Core
-            Qt6::Widgets
-            libusb-1.0
-            nlohmann_json::nlohmann_json
+            ${LIBUSB_LIBRARY}
     )
 
     target_compile_definitions(librevna_host_core PUBLIC LIBREVNA_HEADLESS_HAS_REAL_DRIVER=1)
 else()
     target_sources(librevna_host_core
         PRIVATE
-            ${CMAKE_CURRENT_SOURCE_DIR}/src/stub_host_core.cpp
-    )
-
-    target_include_directories(librevna_host_core
-        PUBLIC
-            ${CMAKE_CURRENT_SOURCE_DIR}/include
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/host_core_stub.cpp
     )
 
     target_compile_definitions(librevna_host_core PUBLIC LIBREVNA_HEADLESS_HAS_REAL_DRIVER=0)

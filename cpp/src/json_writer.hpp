@@ -19,7 +19,7 @@ struct JsonOutput
 
 JsonOutput build_json_payload(const CLIOptions &options,
                               const SweepSummary &summary,
-                              const std::vector<StubVNAMeasurement> &measurements);
+                              const std::vector<VNAMeasurement> &measurements);
 
 bool write_json_to_file(const nlohmann::json &payload, const std::filesystem::path &path, std::string &error);
 

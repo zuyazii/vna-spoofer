@@ -1,7 +1,7 @@
 #pragma once
 
 #include "cli_options.hpp"
-#include "librevna_headless/stub_host_core.hpp"
+#include "librevna_headless/host_core.hpp"
 
 #include <string>
 
