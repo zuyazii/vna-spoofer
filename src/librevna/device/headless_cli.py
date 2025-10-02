@@ -62,7 +62,7 @@ class HeadlessLibreVNA:
         threshold_db: float,
         serial: Optional[str] = None,
         timeout_ms: float = 15000,
-        excited_ports: Iterable[int] | None = None,
+        excited_ports: Optional[Iterable[int]] = None,
         progress: bool = False,
         output_dir: Optional[Path] = None,
     ) -> HeadlessLibreVNAResult:

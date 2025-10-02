@@ -1,17 +1,3 @@
-# Core dependencies for VNA-CLI
-libusb-package>=1.0.24  # USB communication with LibreVNA device (WinUSB driver support)
-pyusb>=1.2.1          # USB communication fallback (legacy support)
-click>=8.0.0           # Command-line interface framework
-numpy>=1.21.0          # Numerical computations for VNA data
-scipy>=1.7.0           # Scientific computing (calibration algorithms)
-matplotlib>=3.5.0      # Plotting and visualization
-pandas>=1.3.0          # Data manipulation and analysis
-
-# Development dependencies for VNA-CLI
-pytest>=6.2.0         # Testing framework
-pytest-cov>=2.12.0    # Coverage reporting
-black>=21.0.0          # Code formatting
-flake8>=3.9.0          # Linting
-mypy>=0.910            # Type checking
-pre-commit>=2.15.0     # Git hooks for code quality
-
+click>=8.1.0
+pyusb>=1.2.1
+libusb-package>=1.0.26
