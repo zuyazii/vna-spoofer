@@ -200,6 +200,7 @@ struct HostCore::Impl
     {
         if(handle)
         {
+            set_idle();
             libusb_release_interface(handle, 0);
             libusb_close(handle);
             handle = nullptr;
@@ -271,6 +272,15 @@ struct HostCore::Impl
         Protocol::PacketInfo packet{};
         packet.type = type;
         return send_packet(packet);
+    }
+
+    void set_idle()
+    {
+        if(!connected || !handle)
+        {
+            return;
+        }
+        send_command(Protocol::PacketType::SetIdle);
     }
 
     bool request_device_info()
@@ -470,6 +480,20 @@ struct HostCore::Impl
     {
         std::vector<VNAMeasurement> results;
 
+        bool sweep_active = false;
+        struct SweepGuard
+        {
+            Impl *impl;
+            bool *active;
+            ~SweepGuard()
+            {
+                if(impl && active && *active)
+                {
+                    impl->set_idle();
+                }
+            }
+        } sweep_guard{this, &sweep_active};
+
         if(!connected || !handle)
         {
             last_error = "Device not connected";
@@ -499,6 +523,8 @@ struct HostCore::Impl
         {
             return results;
         }
+
+        sweep_active = true;
 
         auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(
             static_cast<long long>(config.timeout_ms > 0.0 ? config.timeout_ms : 15000.0));
@@ -569,6 +595,9 @@ struct HostCore::Impl
             last_error = "Device did not acknowledge sweep configuration";
             return {};
         }
+
+        set_idle();
+        sweep_active = false;
 
         return results;
     }
