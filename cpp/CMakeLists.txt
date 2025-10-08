@@ -91,15 +91,15 @@ target_link_libraries(librevna-cli
 
 install(TARGETS librevna-cli RUNTIME DESTINATION bin)
 
-set(QT_REQUIRED_COMPONENTS Widgets)
+set(QT_REQUIRED_COMPONENTS Widgets Charts)
 find_package(Qt6 COMPONENTS ${QT_REQUIRED_COMPONENTS} QUIET)
 
 if(Qt6_FOUND)
-    set(QT_LIBS Qt6::Widgets)
+    set(QT_LIBS Qt6::Widgets Qt6::Charts)
 elseif(NOT Qt6_FOUND)
     find_package(Qt5 COMPONENTS ${QT_REQUIRED_COMPONENTS} QUIET)
     if(Qt5_FOUND)
-        set(QT_LIBS Qt5::Widgets)
+        set(QT_LIBS Qt5::Widgets Qt5::Charts)
     endif()
 endif()
 

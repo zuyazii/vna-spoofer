@@ -5,6 +5,11 @@
 
 #include <QMainWindow>
 #include <QList>
+#include <QHash>
+#include <QtCharts/QChart>
+#include <QtCharts/QChartView>
+#include <QtCharts/QLineSeries>
+#include <QtCharts/QValueAxis>
 
 #include <atomic>
 #include <filesystem>
@@ -63,6 +68,11 @@ private:
     void connectToDevice(const librevna::headless::DiscoveredDevice &device);
     void applyCalibrationFromPath(const QString &path);
     void ensureSweepThreadFinished();
+    void prepareChartsForSweep();
+    void resetCharts();
+    void updateChartsWithResults(const std::vector<librevna::headless::VNAMeasurement> &results);
+    void setChartBadgeState(QLabel *badge, const QString &text, const QString &styleSheet);
+    void setAllChartBadges(const QString &text, const QString &styleSheet);
 
     QLabel *m_calibrationStatusBadge = nullptr;
     QLabel *m_deviceStatusBadge = nullptr;
@@ -87,6 +97,18 @@ private:
     QPushButton *m_chartsToggleButton = nullptr;
     QPushButton *m_statusToggleButton = nullptr;
 
+    struct ChartComponents
+    {
+        QLabel *badge = nullptr;
+        QChart *chart = nullptr;
+        QChartView *view = nullptr;
+        QLineSeries *magnitudeSeries = nullptr;
+        QLineSeries *phaseSeries = nullptr;
+        QValueAxis *axisFrequency = nullptr;
+        QValueAxis *axisMagnitude = nullptr;
+        QValueAxis *axisPhase = nullptr;
+    };
+
     librevna::headless::HostCore m_hostCore;
     std::vector<librevna::headless::DiscoveredDevice> m_discoveredDevices;
     QString m_connectedSerial;
@@ -96,4 +118,6 @@ private:
     std::thread m_sweepThread;
     std::atomic<bool> m_cancelRequested{false};
     std::atomic<bool> m_sweepInProgress{false};
+    QHash<QString, ChartComponents> m_chartComponents;
+    std::vector<librevna::headless::VNAMeasurement> m_latestMeasurements;
 };
