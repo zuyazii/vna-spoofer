@@ -1,0 +1,12 @@
+<RCC>
+    <qresource prefix="/icons">
+        <file alias="calibration_load.svg">../../../assets/icons/upload.svg</file>
+        <file alias="calibration_setup.svg">../../../assets/icons/setup.svg</file>
+        <file alias="start.svg">../../../assets/icons/start-test.svg</file>
+        <file alias="stop.svg">../../../assets/icons/stop.svg</file>
+        <file alias="reset.svg">../../../assets/icons/reset.svg</file>
+        <file alias="charts.svg">../../../assets/icons/line.svg</file>
+        <file alias="status.svg">../../../assets/icons/system-status.svg</file>
+        <file alias="last-update.svg">../../../assets/icons/last-update.svg</file>
+    </qresource>
+</RCC>

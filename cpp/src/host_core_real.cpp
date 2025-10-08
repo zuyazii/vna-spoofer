@@ -1,4 +1,5 @@
 #include "librevna_headless/host_core.hpp"
+#include "librevna_headless/device_ids.hpp"
 
 #include "Protocol.hpp"
 
@@ -27,12 +28,6 @@ namespace librevna::headless
 {
 namespace
 {
-constexpr std::array<std::pair<uint16_t, uint16_t>, 3> kSupportedDevices = {
-    std::make_pair<uint16_t, uint16_t>(0x0483, 0x564E),
-    std::make_pair<uint16_t, uint16_t>(0x0483, 0x4121),
-    std::make_pair<uint16_t, uint16_t>(0x1209, 0x4121)
-};
-
 constexpr std::uint8_t kEndpointOut = 0x01;
 constexpr std::uint8_t kEndpointInData = 0x81;
 // Log endpoint (0x82) is currently unused but left for completeness
@@ -123,12 +118,12 @@ struct HostCore::Impl
                 continue;
             }
 
-            const auto match = std::find_if(kSupportedDevices.begin(), kSupportedDevices.end(),
-                                            [&](const auto &vid_pid) {
-                                                return descriptor.idVendor == vid_pid.first &&
-                                                       descriptor.idProduct == vid_pid.second;
+            const auto match = std::find_if(kKnownLibreVNADevices.begin(), kKnownLibreVNADevices.end(),
+                                            [&](const DeviceIdentifier &info) {
+                                                return descriptor.idVendor == info.vendor_id &&
+                                                       descriptor.idProduct == info.product_id;
                                             });
-            if(match == kSupportedDevices.end())
+            if(match == kKnownLibreVNADevices.end())
             {
                 continue;
             }

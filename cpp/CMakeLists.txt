@@ -27,6 +27,11 @@ target_include_directories(librevna_host_core
         ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
+target_sources(librevna_host_core
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/device_discovery.cpp
+)
+
 if(LIBREVNA_HEADLESS_USE_REAL_DRIVER)
     target_sources(librevna_host_core
         PRIVATE
@@ -85,3 +90,45 @@ target_link_libraries(librevna-cli
 )
 
 install(TARGETS librevna-cli RUNTIME DESTINATION bin)
+
+set(QT_REQUIRED_COMPONENTS Widgets)
+find_package(Qt6 COMPONENTS ${QT_REQUIRED_COMPONENTS} QUIET)
+
+if(Qt6_FOUND)
+    set(QT_LIBS Qt6::Widgets)
+elseif(NOT Qt6_FOUND)
+    find_package(Qt5 COMPONENTS ${QT_REQUIRED_COMPONENTS} QUIET)
+    if(Qt5_FOUND)
+        set(QT_LIBS Qt5::Widgets)
+    endif()
+endif()
+
+if(QT_LIBS)
+    add_executable(vna-spoofer-gui
+        src/gui/main.cpp
+        src/gui/MainWindow.cpp
+        src/gui/MainWindow.hpp
+        src/gui/gui_resources.qrc
+    )
+
+    set_target_properties(vna-spoofer-gui PROPERTIES
+        AUTOMOC ON
+        AUTOUIC ON
+        AUTORCC ON
+    )
+
+    target_include_directories(vna-spoofer-gui
+        PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/gui
+    )
+
+    target_link_libraries(vna-spoofer-gui
+        PRIVATE
+            ${QT_LIBS}
+            librevna_host_core
+    )
+
+    install(TARGETS vna-spoofer-gui RUNTIME DESTINATION bin)
+else()
+    message(STATUS "Qt not found; skipping vna-spoofer-gui target")
+endif()
