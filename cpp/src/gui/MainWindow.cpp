@@ -17,6 +17,7 @@
 #include <QMessageBox>
 #include <QMetaObject>
 #include <QPushButton>
+#include <QScrollArea>
 #include <QSize>
 #include <QSizePolicy>
 #include <QSpinBox>
@@ -240,7 +241,7 @@ void MainWindow::setupUi()
             background: #fcfdff;
             border: 1px dashed #d7daeb;
             border-radius: 16px;
-            min-height: 180px;
+            min-height: 140px;
         }
         QWidget[role="metaChip"] {
             background: #ffffff;
@@ -259,8 +260,15 @@ void MainWindow::setupUi()
         }
     )"));
 
-    auto *central = new QWidget(this);
+    auto *scrollArea = new QScrollArea(this);
+    scrollArea->setFrameShape(QFrame::NoFrame);
+    scrollArea->setWidgetResizable(true);
+    scrollArea->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+
+    auto *central = new QWidget(scrollArea);
     central->setObjectName(QStringLiteral("MainCentral"));
+    central->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+
     auto *rootLayout = new QVBoxLayout(central);
     rootLayout->setSpacing(28);
     rootLayout->setContentsMargins(32, 28, 32, 32);
@@ -285,7 +293,8 @@ void MainWindow::setupUi()
 
     rootLayout->addWidget(createViewTogglePanel(central), 1);
 
-    setCentralWidget(central);
+    scrollArea->setWidget(central);
+    setCentralWidget(scrollArea);
 
     m_calibrationDirectory = findCalibrationDirectory();
     refreshCalibrationList();
@@ -303,6 +312,7 @@ QWidget *MainWindow::createCalibrationPanel()
 {
     auto *frame = new QFrame(this);
     frame->setProperty("panel", true);
+    frame->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
 
     auto *layout = new QVBoxLayout(frame);
     layout->setSpacing(16);
@@ -429,6 +439,7 @@ QWidget *MainWindow::createTestControlPanel()
 {
     auto *frame = new QFrame(this);
     frame->setProperty("panel", true);
+    frame->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
 
     auto *layout = new QVBoxLayout(frame);
     layout->setSpacing(18);
@@ -548,6 +559,7 @@ QWidget *MainWindow::createTestControlPanel()
 QWidget *MainWindow::createViewTogglePanel(QWidget *parent)
 {
     auto *container = new QWidget(parent);
+    container->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
     auto *containerLayout = new QVBoxLayout(container);
     containerLayout->setContentsMargins(0, 0, 0, 0);
     containerLayout->setSpacing(18);
@@ -613,6 +625,7 @@ QWidget *MainWindow::createViewTogglePanel(QWidget *parent)
 QWidget *MainWindow::createChartsPanel()
 {
     auto *panel = new QWidget(this);
+    panel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
     auto *layout = new QGridLayout(panel);
     layout->setContentsMargins(8, 16, 8, 16);
     layout->setHorizontalSpacing(18);
@@ -648,6 +661,7 @@ QWidget *MainWindow::createChartsPanel()
 QWidget *MainWindow::createStatusPanel()
 {
     auto *panel = new QWidget(this);
+    panel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
     auto *layout = new QVBoxLayout(panel);
     layout->setContentsMargins(24, 24, 24, 24);
     layout->setSpacing(16);
@@ -731,6 +745,7 @@ QWidget *MainWindow::createChartCard(const QString &parameterId, const QString &
 {
     auto *frame = new QFrame(this);
     frame->setProperty("panel", true);
+    frame->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
 
     auto *layout = new QVBoxLayout(frame);
     layout->setContentsMargins(20, 20, 20, 20);
@@ -757,6 +772,7 @@ QWidget *MainWindow::createChartCard(const QString &parameterId, const QString &
 
     auto *chartArea = new QFrame(frame);
     chartArea->setProperty("role", QStringLiteral("chartArea"));
+    chartArea->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
 
     layout->addWidget(chartArea, 1);
 
