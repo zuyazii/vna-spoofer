@@ -18,6 +18,15 @@
 #include <QMetaObject>
 #include <QPushButton>
 #include <QScrollArea>
+#include <QGraphicsView>
+#include <QGestureEvent>
+#include <QMouseEvent>
+#include <QPinchGesture>
+#include <QPainter>
+#include <QPen>
+#include <QPointF>
+#include <QVector>
+#include <QWheelEvent>
 #include <QSize>
 #include <QSizePolicy>
 #include <QSpinBox>
@@ -25,6 +34,7 @@
 #include <QToolButton>
 #include <QTimer>
 #include <QVBoxLayout>
+#include <QStyle>
 #include <QSignalBlocker>
 #include <QStringList>
 #include <QFileDialog>
@@ -36,6 +46,8 @@
 #include <complex>
 #include <chrono>
 #include <filesystem>
+#include <functional>
+#include <limits>
 #include <sstream>
 #include <utility>
 #include <system_error>
@@ -43,6 +55,98 @@
 
 namespace
 {
+
+class InteractiveChartView : public QChartView
+{
+public:
+    using ResetCallback = std::function<void()>;
+
+    explicit InteractiveChartView(QChart *chart, QWidget *parent = nullptr)
+        : QChartView(chart, parent)
+    {
+        setRubberBand(QChartView::RectangleRubberBand);
+        setDragMode(QGraphicsView::ScrollHandDrag);
+        setInteractive(true);
+        setAttribute(Qt::WA_AcceptTouchEvents, true);
+        grabGesture(Qt::PinchGesture);
+    }
+
+    void setResetCallback(ResetCallback callback)
+    {
+        m_resetCallback = std::move(callback);
+    }
+
+protected:
+    bool event(QEvent *event) override
+    {
+        if (event->type() == QEvent::Gesture) {
+            if (handleGesture(static_cast<QGestureEvent *>(event))) {
+                return true;
+            }
+        }
+        return QChartView::event(event);
+    }
+
+    void wheelEvent(QWheelEvent *event) override
+    {
+        if (!chart()) {
+            QChartView::wheelEvent(event);
+            return;
+        }
+
+        const QPointF delta = !event->pixelDelta().isNull() ? event->pixelDelta() : event->angleDelta();
+        const qreal dy = delta.y();
+        const qreal dx = delta.x();
+
+        if (event->modifiers().testFlag(Qt::ControlModifier)) {
+            const qreal effectiveDelta = std::abs(dy) > std::numeric_limits<qreal>::epsilon() ? dy : dx;
+            if (std::abs(effectiveDelta) > std::numeric_limits<qreal>::epsilon()) {
+                const qreal factor = effectiveDelta > 0 ? 1.1 : 0.9;
+                chart()->zoom(factor);
+                event->accept();
+                return;
+            }
+        } else if (event->modifiers().testFlag(Qt::ShiftModifier)) {
+            qreal horizontal = std::abs(dy) > std::numeric_limits<qreal>::epsilon() ? dy : dx;
+            if (std::abs(horizontal) > std::numeric_limits<qreal>::epsilon()) {
+                const qreal scrollFactor = 0.6;
+                chart()->scroll(-horizontal * scrollFactor, 0.0);
+                event->accept();
+                return;
+            }
+        }
+
+        QChartView::wheelEvent(event);
+    }
+
+    void mouseDoubleClickEvent(QMouseEvent *event) override
+    {
+        if (m_resetCallback) {
+            m_resetCallback();
+            event->accept();
+            return;
+        }
+        QChartView::mouseDoubleClickEvent(event);
+    }
+
+private:
+    bool handleGesture(QGestureEvent *gestureEvent)
+    {
+        if (auto *pinch = static_cast<QPinchGesture *>(gestureEvent->gesture(Qt::PinchGesture))) {
+            if (chart() && (pinch->changeFlags() & QPinchGesture::ScaleFactorChanged)) {
+                const qreal factor = pinch->scaleFactor();
+                if (factor > 0.0 && std::abs(factor - 1.0) > std::numeric_limits<qreal>::epsilon()) {
+                    chart()->zoom(factor);
+                }
+            }
+            gestureEvent->accept(pinch);
+            return true;
+        }
+        return false;
+    }
+
+    ResetCallback m_resetCallback;
+};
 
 struct ParameterOutcome
 {
@@ -241,7 +345,7 @@ void MainWindow::setupUi()
             background: #fcfdff;
             border: 1px dashed #d7daeb;
             border-radius: 16px;
-            min-height: 140px;
+            min-height: 320px;
         }
         QWidget[role="metaChip"] {
             background: #ffffff;
@@ -257,6 +361,19 @@ void MainWindow::setupUi()
             border-radius: 12px;
             padding: 4px 12px;
             font-weight: 600;
+        }
+        QLabel[role="cardBadge"][state="inactive"],
+        QLabel[role="cardBadge"][state="pending"] {
+            background: #eef1f9;
+            color: #7f8399;
+        }
+        QLabel[role="cardBadge"][state="pass"] {
+            background: #eefaf1;
+            color: #1d8a43;
+        }
+        QLabel[role="cardBadge"][state="fail"] {
+            background: #fdecef;
+            color: #d12b57;
         }
     )"));
 
@@ -305,6 +422,8 @@ void MainWindow::setupUi()
 
     QTimer::singleShot(0, this, &MainWindow::onScanDevices);
 
+    m_activeParameters.clear();
+    resetCharts();
     appendStatusMessage(QStringLiteral("S Parameter Test System initialized"));
 }
 
@@ -762,6 +881,7 @@ QWidget *MainWindow::createChartCard(const QString &parameterId, const QString &
 
     auto *badge = new QLabel(QStringLiteral("Inactive"), frame);
     badge->setProperty("role", QStringLiteral("cardBadge"));
+    badge->setProperty("state", QStringLiteral("inactive"));
 
     headerRow->addWidget(title);
     headerRow->addWidget(subtitle);
@@ -773,6 +893,59 @@ QWidget *MainWindow::createChartCard(const QString &parameterId, const QString &
     auto *chartArea = new QFrame(frame);
     chartArea->setProperty("role", QStringLiteral("chartArea"));
     chartArea->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+
+    auto *chartLayout = new QVBoxLayout(chartArea);
+    chartLayout->setContentsMargins(0, 0, 0, 0);
+    chartLayout->setSpacing(0);
+
+    auto *chart = new QChart;
+    chart->setBackgroundRoundness(0.0);
+    chart->setBackgroundVisible(false);
+    chart->legend()->hide();
+
+    auto *axisFrequency = new QValueAxis(chart);
+    axisFrequency->setTitleText(QStringLiteral("Frequency (GHz)"));
+    axisFrequency->setLabelFormat(QStringLiteral("%.2f"));
+    axisFrequency->setRange(0.0, 1.0);
+    chart->addAxis(axisFrequency, Qt::AlignBottom);
+
+    auto *axisMagnitude = new QValueAxis(chart);
+    axisMagnitude->setTitleText(QStringLiteral("Magnitude (dB)"));
+    axisMagnitude->setLabelFormat(QStringLiteral("%.1f"));
+    axisMagnitude->setRange(-100.0, 10.0);
+    chart->addAxis(axisMagnitude, Qt::AlignLeft);
+
+    auto *axisPhase = new QValueAxis(chart);
+    axisPhase->setTitleText(QStringLiteral("Phase (deg)"));
+    axisPhase->setLabelFormat(QStringLiteral("%.0f"));
+    axisPhase->setRange(-180.0, 180.0);
+    chart->addAxis(axisPhase, Qt::AlignRight);
+
+    auto *magnitudeSeries = new QLineSeries(chart);
+    magnitudeSeries->setName(QStringLiteral("Magnitude (dB)"));
+    QPen magnitudePen(QColor(QStringLiteral("#4540ff")));
+    magnitudePen.setWidthF(2.0);
+    magnitudeSeries->setPen(magnitudePen);
+    chart->addSeries(magnitudeSeries);
+    magnitudeSeries->attachAxis(axisFrequency);
+    magnitudeSeries->attachAxis(axisMagnitude);
+
+    auto *phaseSeries = new QLineSeries(chart);
+    phaseSeries->setName(QStringLiteral("Phase (deg)"));
+    QPen phasePen(QColor(QStringLiteral("#1d8a43")));
+    phasePen.setWidthF(1.5);
+    phasePen.setStyle(Qt::DashLine);
+    phaseSeries->setPen(phasePen);
+    chart->addSeries(phaseSeries);
+    phaseSeries->attachAxis(axisFrequency);
+    phaseSeries->attachAxis(axisPhase);
+
+    auto *chartView = new InteractiveChartView(chart, chartArea);
+    chartView->setRenderHint(QPainter::Antialiasing);
+    chartView->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+    chartView->setMinimumHeight(320);
+    chartView->setFocusPolicy(Qt::StrongFocus);
+    chartLayout->addWidget(chartView);
 
     layout->addWidget(chartArea, 1);
 
@@ -790,6 +963,27 @@ QWidget *MainWindow::createChartCard(const QString &parameterId, const QString &
     legendRow->addStretch();
 
     layout->addLayout(legendRow);
+
+    ChartComponents components;
+    components.badge = badge;
+    components.chart = chart;
+    components.view = chartView;
+    components.magnitudeSeries = magnitudeSeries;
+    components.phaseSeries = phaseSeries;
+    components.axisFrequency = axisFrequency;
+    components.axisMagnitude = axisMagnitude;
+    components.axisPhase = axisPhase;
+    components.baseFrequencyMin = 0.0;
+    components.baseFrequencyMax = 1.0;
+    components.baseMagnitudeMin = -100.0;
+    components.baseMagnitudeMax = 10.0;
+    components.basePhaseMin = -180.0;
+    components.basePhaseMax = 180.0;
+
+    m_chartComponents.insert(parameterId, components);
+    chartView->setResetCallback([this, parameterId]() {
+        resetChartToBaseline(parameterId);
+    });
 
     return frame;
 }
@@ -1280,8 +1474,15 @@ void MainWindow::onStartTest()
     configuration.timeout_ms = 15000.0;
     configuration.excited_ports = {1, 2};
 
+    m_activeParameters.clear();
+    for (const auto &param : selectedParams) {
+        m_activeParameters.insert(param);
+    }
+
     const auto calibrationPath = m_activeCalibrationPath;
     const QString parameterSummary = selectedParams.join(QStringLiteral(", "));
+
+    prepareChartsForSweep();
 
     appendStatusMessage(QStringLiteral("Starting sweep: %1 GHz -> %2 GHz (%3 points) [%4]")
                         .arg(startGHz, 0, 'f', 3)
@@ -1315,7 +1516,8 @@ void MainWindow::onStartTest()
              lastError,
              startHz = configuration.start_frequency_hz,
              stopHz = configuration.stop_frequency_hz,
-             parameterSummary]() {
+             parameterSummary,
+             results = std::move(results)]() {
                 if (m_sweepThread.joinable()) {
                     m_sweepThread.join();
                     m_sweepThread = std::thread();
@@ -1333,6 +1535,8 @@ void MainWindow::onStartTest()
                     appendStatusMessage(QStringLiteral("Sweep cancelled after %.3f GHz -> %.3f GHz")
                                         .arg(startGHzLocal, 0, 'f', 3)
                                         .arg(stopGHzLocal, 0, 'f', 3));
+                    resetCharts();
+                    setAllChartBadges(QStringLiteral("Cancelled"), QStringLiteral("inactive"));
                     if (m_testHintLabel) {
                         m_testHintLabel->setText(QStringLiteral("Sweep cancelled. Adjust settings and start again."));
                     }
@@ -1346,13 +1550,28 @@ void MainWindow::onStartTest()
                     QMessageBox::warning(this,
                                          QStringLiteral("Sweep failed"),
                                          QStringLiteral("Sweep did not produce any data.\n%1").arg(errorMsg));
+                    resetCharts();
+                    setAllChartBadges(QStringLiteral("Error"), QStringLiteral("fail"));
                     if (m_testHintLabel) {
                         m_testHintLabel->setText(QStringLiteral("Sweep failed. Check connections and try again."));
                     }
                     return;
                 }
 
-                const bool pass = summary.overallPass;
+                bool pass = summary.overallPass;
+                if (!m_activeParameters.isEmpty()) {
+                    pass = true;
+                    for (const auto &parameter : summary.parameters) {
+                        const QString parameterId = QString::fromStdString(parameter.name);
+                        if (!m_activeParameters.contains(parameterId)) {
+                            continue;
+                        }
+                        if (!parameter.pass) {
+                            pass = false;
+                            break;
+                        }
+                    }
+                }
                 updateTestState(pass ? QStringLiteral("Pass") : QStringLiteral("Fail"));
                 const QString paramText = parameterSummary.isEmpty()
                                               ? QStringLiteral("S-parameters")
@@ -1361,6 +1580,19 @@ void MainWindow::onStartTest()
                                     .arg(pass ? QStringLiteral("PASS") : QStringLiteral("FAIL"))
                                     .arg(static_cast<qulonglong>(resultCount))
                                     .arg(paramText));
+
+                updateChartsWithResults(results);
+                for (const auto &parameter : summary.parameters) {
+                    const QString parameterId = QString::fromStdString(parameter.name);
+                    if (!m_activeParameters.contains(parameterId)) {
+                        continue;
+                    }
+                    const QString badgeText = parameter.pass ? QStringLiteral("PASS") : QStringLiteral("FAIL");
+                    const QString badgeState = parameter.pass ? QStringLiteral("pass") : QStringLiteral("fail");
+                    if (auto it = m_chartComponents.find(parameterId); it != m_chartComponents.end()) {
+                        setChartBadgeState(it.value().badge, badgeText, badgeState);
+                    }
+                }
 
                 if (m_testHintLabel) {
                     m_testHintLabel->setText(pass
@@ -1407,6 +1639,8 @@ void MainWindow::onResetTest()
     appendStatusMessage(QStringLiteral("Parameters reset to defaults"));
     updateTestState(QStringLiteral("Ready"));
     updateControlsForRunning(false);
+    resetCharts();
+    m_activeParameters.clear();
 
     if (m_testHintLabel) {
         if (m_hostCore.is_connected() && !m_activeCalibrationPath.empty()) {
@@ -1443,4 +1677,266 @@ void MainWindow::onSParameterToggled(bool /*checked*/)
     }
 }
 
+void MainWindow::prepareChartsForSweep()
+{
+    const double startGHz = m_startFrequencySpin ? m_startFrequencySpin->value() : 0.0;
+    const double stopGHz = m_stopFrequencySpin ? m_stopFrequencySpin->value() : 0.0;
+    const double lower = std::min(startGHz, stopGHz);
+    const double upper = (stopGHz > startGHz) ? stopGHz : (lower + 1.0);
 
+    for (auto it = m_chartComponents.begin(); it != m_chartComponents.end(); ++it) {
+        const QString parameterId = it.key();
+        const bool isActive = m_activeParameters.contains(parameterId);
+        auto &components = it.value();
+        if (components.magnitudeSeries) {
+            components.magnitudeSeries->clear();
+        }
+        if (components.phaseSeries) {
+            components.phaseSeries->clear();
+        }
+        components.baseFrequencyMin = lower;
+        components.baseFrequencyMax = upper;
+        components.baseMagnitudeMin = -100.0;
+        components.baseMagnitudeMax = 10.0;
+        components.basePhaseMin = -180.0;
+        components.basePhaseMax = 180.0;
+        resetChartToBaseline(parameterId);
+
+        if (isActive) {
+            setChartBadgeState(components.badge, QStringLiteral("Pending"), QStringLiteral("pending"));
+        } else {
+            setChartBadgeState(components.badge, QStringLiteral("Inactive"), QStringLiteral("inactive"));
+        }
+    }
+}
+
+void MainWindow::resetCharts()
+{
+    const double startGHz = m_startFrequencySpin ? m_startFrequencySpin->value() : 0.0;
+    const double stopGHz = m_stopFrequencySpin ? m_stopFrequencySpin->value() : 0.0;
+    const double lower = std::min(startGHz, stopGHz);
+    const double upper = (stopGHz > startGHz) ? stopGHz : (lower + 1.0);
+
+    for (auto it = m_chartComponents.begin(); it != m_chartComponents.end(); ++it) {
+        const QString parameterId = it.key();
+        auto &components = it.value();
+        if (components.magnitudeSeries) {
+            components.magnitudeSeries->clear();
+        }
+        if (components.phaseSeries) {
+            components.phaseSeries->clear();
+        }
+        components.baseFrequencyMin = lower;
+        components.baseFrequencyMax = upper;
+        components.baseMagnitudeMin = -100.0;
+        components.baseMagnitudeMax = 10.0;
+        components.basePhaseMin = -180.0;
+        components.basePhaseMax = 180.0;
+        resetChartToBaseline(parameterId);
+        setChartBadgeState(components.badge, QStringLiteral("Inactive"), QStringLiteral("inactive"));
+    }
+    m_latestMeasurements.clear();
+}
+
+void MainWindow::updateChartsWithResults(const std::vector<librevna::headless::VNAMeasurement> &results)
+{
+    if (results.empty()) {
+        return;
+    }
+
+    if (m_activeParameters.isEmpty()) {
+        m_latestMeasurements.clear();
+        return;
+    }
+
+    m_latestMeasurements = results;
+
+    QHash<QString, QVector<QPointF>> magnitudeData;
+    QHash<QString, QVector<QPointF>> phaseData;
+    magnitudeData.reserve(m_activeParameters.size());
+    phaseData.reserve(m_activeParameters.size());
+
+    struct Range {
+        double min = std::numeric_limits<double>::max();
+        double max = std::numeric_limits<double>::lowest();
+    };
+
+    QHash<QString, Range> magnitudeRanges;
+    QHash<QString, Range> phaseRanges;
+
+    std::vector<std::pair<QString, std::string>> trackedParameters;
+    trackedParameters.reserve(m_activeParameters.size());
+    for (auto it = m_chartComponents.cbegin(); it != m_chartComponents.cend(); ++it) {
+        if (!m_activeParameters.contains(it.key())) {
+            continue;
+        }
+        trackedParameters.emplace_back(it.key(), it.key().toStdString());
+    }
+    if (trackedParameters.empty()) {
+        return;
+    }
+
+    double minFrequency = std::numeric_limits<double>::max();
+    double maxFrequency = std::numeric_limits<double>::lowest();
+    constexpr double kRadToDeg = 180.0 / 3.14159265358979323846;
+
+    for (const auto &measurement : results) {
+        const double frequencyGHz = measurement.frequency / 1e9;
+        minFrequency = std::min(minFrequency, frequencyGHz);
+        maxFrequency = std::max(maxFrequency, frequencyGHz);
+
+        for (const auto &entry : trackedParameters) {
+            const auto iter = measurement.parameters.find(entry.second);
+            if (iter == measurement.parameters.end()) {
+                continue;
+            }
+
+            const auto &value = iter->second;
+            const double magnitude = std::abs(value);
+            const double magnitudeDb = magnitude <= 0.0 ? -300.0 : 20.0 * std::log10(magnitude);
+            const double phaseDeg = std::atan2(value.imag(), value.real()) * kRadToDeg;
+
+            auto &magPoints = magnitudeData[entry.first];
+            magPoints.append(QPointF(frequencyGHz, magnitudeDb));
+
+            auto &phasePoints = phaseData[entry.first];
+            phasePoints.append(QPointF(frequencyGHz, phaseDeg));
+
+            auto &magRange = magnitudeRanges[entry.first];
+            magRange.min = std::min(magRange.min, magnitudeDb);
+            magRange.max = std::max(magRange.max, magnitudeDb);
+
+            auto &phaseRange = phaseRanges[entry.first];
+            phaseRange.min = std::min(phaseRange.min, phaseDeg);
+            phaseRange.max = std::max(phaseRange.max, phaseDeg);
+        }
+    }
+
+    double frequencyMin = minFrequency;
+    double frequencyMax = maxFrequency;
+    if (!std::isfinite(frequencyMin) || !std::isfinite(frequencyMax) || frequencyMin > frequencyMax) {
+        frequencyMin = 0.0;
+        frequencyMax = 1.0;
+    }
+    if (frequencyMax - frequencyMin < 1e-6) {
+        const double span = std::max(0.01, std::abs(frequencyMin) * 0.05);
+        frequencyMin -= span;
+        frequencyMax += span;
+    }
+
+    for (auto it = m_chartComponents.begin(); it != m_chartComponents.end(); ++it) {
+        const QString &parameterId = it.key();
+        auto &components = it.value();
+        const bool isActive = m_activeParameters.contains(parameterId);
+
+        if (!isActive) {
+            if (components.magnitudeSeries) {
+                components.magnitudeSeries->clear();
+            }
+            if (components.phaseSeries) {
+                components.phaseSeries->clear();
+            }
+            resetChartToBaseline(parameterId);
+            setChartBadgeState(components.badge, QStringLiteral("Inactive"), QStringLiteral("inactive"));
+            continue;
+        }
+
+        const auto magnitudePoints = magnitudeData.value(parameterId);
+        const auto phasePoints = phaseData.value(parameterId);
+
+        if (components.magnitudeSeries) {
+            components.magnitudeSeries->replace(magnitudePoints);
+        }
+        if (components.phaseSeries) {
+            components.phaseSeries->replace(phasePoints);
+        }
+
+        if (components.axisFrequency && minFrequency <= maxFrequency) {
+            components.axisFrequency->setRange(frequencyMin, frequencyMax);
+            components.baseFrequencyMin = frequencyMin;
+            components.baseFrequencyMax = frequencyMax;
+        }
+
+        if (components.axisMagnitude) {
+            const auto range = magnitudeRanges.value(parameterId);
+            if (!magnitudePoints.isEmpty() && range.min <= range.max) {
+                const double padding = 3.0;
+                const double minValue = range.min - padding;
+                const double maxValue = range.max + padding;
+                components.axisMagnitude->setRange(minValue, maxValue);
+                components.baseMagnitudeMin = minValue;
+                components.baseMagnitudeMax = maxValue;
+            } else {
+                components.axisMagnitude->setRange(-100.0, 10.0);
+                components.baseMagnitudeMin = -100.0;
+                components.baseMagnitudeMax = 10.0;
+            }
+        }
+
+        if (components.axisPhase) {
+            const auto range = phaseRanges.value(parameterId);
+            if (!phasePoints.isEmpty() && range.min <= range.max) {
+                const double padding = 10.0;
+                const double minValue = range.min - padding;
+                const double maxValue = range.max + padding;
+                components.axisPhase->setRange(minValue, maxValue);
+                components.basePhaseMin = minValue;
+                components.basePhaseMax = maxValue;
+            } else {
+                components.axisPhase->setRange(-180.0, 180.0);
+                components.basePhaseMin = -180.0;
+                components.basePhaseMax = 180.0;
+            }
+        }
+    }
+}
+
+void MainWindow::setChartBadgeState(QLabel *badge, const QString &text, const QString &state)
+{
+    if (!badge) {
+        return;
+    }
+
+    badge->setText(text);
+    if (!state.isEmpty()) {
+        badge->setProperty("state", state);
+        if (auto *style = badge->style()) {
+            style->unpolish(badge);
+            style->polish(badge);
+        }
+    }
+    badge->update();
+}
+
+void MainWindow::setAllChartBadges(const QString &text, const QString &state)
+{
+    const bool applyToAll = (state == QStringLiteral("inactive") && text == QStringLiteral("Inactive"));
+    for (auto it = m_chartComponents.begin(); it != m_chartComponents.end(); ++it) {
+        if (!applyToAll && !m_activeParameters.contains(it.key())) {
+            continue;
+        }
+        setChartBadgeState(it.value().badge, text, state);
+    }
+}
+
+void MainWindow::resetChartToBaseline(const QString &parameterId)
+{
+    auto it = m_chartComponents.find(parameterId);
+    if (it == m_chartComponents.end()) {
+        return;
+    }
+
+    auto &components = it.value();
+    if (components.chart) {
+        components.chart->zoomReset();
+    }
+    if (components.axisFrequency) {
+        components.axisFrequency->setRange(components.baseFrequencyMin, components.baseFrequencyMax);
+    }
+    if (components.axisMagnitude) {
+        components.axisMagnitude->setRange(components.baseMagnitudeMin, components.baseMagnitudeMax);
+    }
+    if (components.axisPhase) {
+        components.axisPhase->setRange(components.basePhaseMin, components.basePhaseMax);
+    }
+}

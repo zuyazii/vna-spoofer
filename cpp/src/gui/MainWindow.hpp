@@ -6,6 +6,7 @@
 #include <QMainWindow>
 #include <QList>
 #include <QHash>
+#include <QSet>
 #include <QtCharts/QChart>
 #include <QtCharts/QChartView>
 #include <QtCharts/QLineSeries>
@@ -71,8 +72,9 @@ private:
     void prepareChartsForSweep();
     void resetCharts();
     void updateChartsWithResults(const std::vector<librevna::headless::VNAMeasurement> &results);
-    void setChartBadgeState(QLabel *badge, const QString &text, const QString &styleSheet);
-    void setAllChartBadges(const QString &text, const QString &styleSheet);
+    void setChartBadgeState(QLabel *badge, const QString &text, const QString &state);
+    void setAllChartBadges(const QString &text, const QString &state);
+    void resetChartToBaseline(const QString &parameterId);
 
     QLabel *m_calibrationStatusBadge = nullptr;
     QLabel *m_deviceStatusBadge = nullptr;
@@ -96,6 +98,7 @@ private:
     QButtonGroup *m_viewToggleGroup = nullptr;
     QPushButton *m_chartsToggleButton = nullptr;
     QPushButton *m_statusToggleButton = nullptr;
+    QSet<QString> m_activeParameters;
 
     struct ChartComponents
     {
@@ -107,6 +110,12 @@ private:
         QValueAxis *axisFrequency = nullptr;
         QValueAxis *axisMagnitude = nullptr;
         QValueAxis *axisPhase = nullptr;
+        double baseFrequencyMin = 0.0;
+        double baseFrequencyMax = 1.0;
+        double baseMagnitudeMin = -100.0;
+        double baseMagnitudeMax = 10.0;
+        double basePhaseMin = -180.0;
+        double basePhaseMax = 180.0;
     };
 
     librevna::headless::HostCore m_hostCore;
