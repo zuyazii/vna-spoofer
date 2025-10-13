@@ -3,6 +3,8 @@
 
 #include <QAbstractItemView>
 #include <QButtonGroup>
+#include <QCheckBox>
+#include <QtCharts/QAbstractAxis>
 #include <QCoreApplication>
 #include <QDateTime>
 #include <QDir>
@@ -21,10 +23,13 @@
 #include <QGraphicsView>
 #include <QGestureEvent>
 #include <QMouseEvent>
+#include <QPanGesture>
 #include <QPinchGesture>
 #include <QPainter>
+#include <QPixmap>
 #include <QPen>
 #include <QPointF>
+#include <QRubberBand>
 #include <QVector>
 #include <QWheelEvent>
 #include <QSize>
@@ -56,6 +61,28 @@
 namespace
 {
 
+QIcon makeSeriesIcon(const QColor &color, Qt::PenStyle style)
+{
+    QPixmap pixmap(28, 12);
+    pixmap.fill(Qt::transparent);
+
+    QPainter painter(&pixmap);
+    painter.setRenderHint(QPainter::Antialiasing);
+
+    QPen pen(color);
+    pen.setWidthF(2.5);
+    pen.setStyle(style);
+    painter.setPen(pen);
+
+    const qreal margin = 3.0;
+    const QPointF startPoint(margin, pixmap.height() / 2.0);
+    const QPointF endPoint(pixmap.width() - margin, pixmap.height() / 2.0);
+    painter.drawLine(startPoint, endPoint);
+    painter.end();
+
+    return QIcon(pixmap);
+}
+
 class InteractiveChartView : public QChartView
 {
 public:
@@ -64,11 +91,13 @@ public:
     explicit InteractiveChartView(QChart *chart, QWidget *parent = nullptr)
         : QChartView(chart, parent)
     {
-        setRubberBand(QChartView::RectangleRubberBand);
+        setRubberBand(QChartView::NoRubberBand);
         setDragMode(QGraphicsView::ScrollHandDrag);
         setInteractive(true);
         setAttribute(Qt::WA_AcceptTouchEvents, true);
         grabGesture(Qt::PinchGesture);
+        grabGesture(Qt::PanGesture);
+        viewport()->setCursor(Qt::OpenHandCursor);
     }
 
     void setResetCallback(ResetCallback callback)
@@ -119,6 +148,74 @@ protected:
         QChartView::wheelEvent(event);
     }
 
+    void mousePressEvent(QMouseEvent *event) override
+    {
+        if (event->button() == Qt::LeftButton && chart()) {
+            m_leftPanActive = true;
+            m_rubberActive = false;
+            m_lastPanPosition = event->pos();
+            viewport()->setCursor(Qt::ClosedHandCursor);
+            event->accept();
+            return;
+        }
+
+        if (event->button() == Qt::RightButton && chart()) {
+            if (!m_rubberBand) {
+                m_rubberBand = new QRubberBand(QRubberBand::Rectangle, viewport());
+            }
+            m_rubberOrigin = event->pos();
+            m_rubberActive = true;
+            m_rubberBand->setGeometry(QRect(m_rubberOrigin, QSize()));
+            m_rubberBand->show();
+            event->accept();
+            return;
+        }
+        QChartView::mousePressEvent(event);
+    }
+
+    void mouseMoveEvent(QMouseEvent *event) override
+    {
+        if (m_leftPanActive && chart()) {
+            const QPoint currentPos = event->pos();
+            const QPoint delta = currentPos - m_lastPanPosition;
+            if (!delta.isNull()) {
+                chart()->scroll(-delta.x(), delta.y());
+                m_lastPanPosition = currentPos;
+            }
+            event->accept();
+            return;
+        }
+
+        if (m_rubberActive && m_rubberBand) {
+            m_rubberBand->setGeometry(QRect(m_rubberOrigin, event->pos()).normalized());
+            event->accept();
+            return;
+        }
+        QChartView::mouseMoveEvent(event);
+    }
+
+    void mouseReleaseEvent(QMouseEvent *event) override
+    {
+        if (event->button() == Qt::LeftButton && m_leftPanActive) {
+            m_leftPanActive = false;
+            viewport()->setCursor(Qt::OpenHandCursor);
+            event->accept();
+            return;
+        }
+
+        if (event->button() == Qt::RightButton && m_rubberActive) {
+            if (m_rubberBand) {
+                m_rubberBand->hide();
+                const QRect selection = QRect(m_rubberOrigin, event->pos()).normalized();
+                applyRubberBandZoom(selection);
+            }
+            m_rubberActive = false;
+            event->accept();
+            return;
+        }
+        QChartView::mouseReleaseEvent(event);
+    }
+
     void mouseDoubleClickEvent(QMouseEvent *event) override
     {
         if (m_resetCallback) {
@@ -142,10 +239,77 @@ private:
             gestureEvent->accept(pinch);
             return true;
         }
+        if (auto *pan = static_cast<QPanGesture *>(gestureEvent->gesture(Qt::PanGesture))) {
+            if (chart()) {
+                const QPointF delta = pan->delta();
+                chart()->scroll(-delta.x(), delta.y());
+            }
+            gestureEvent->accept(pan);
+            return true;
+        }
         return false;
     }
 
+    void applyRubberBandZoom(const QRect &selection)
+    {
+        if (!chart()) {
+            return;
+        }
+
+        QRectF plot = chart()->plotArea();
+        if (plot.width() <= 0.0 || plot.height() <= 0.0) {
+            return;
+        }
+
+        QRectF selected = QRectF(selection).intersected(plot);
+        if (selected.width() < 5.0 || selected.height() < 5.0) {
+            return;
+        }
+
+        const auto horizontalAxes = chart()->axes(Qt::Horizontal);
+        if (!horizontalAxes.isEmpty()) {
+            if (auto *axis = qobject_cast<QValueAxis *>(horizontalAxes.first())) {
+                const double span = axis->max() - axis->min();
+                if (span > std::numeric_limits<double>::epsilon()) {
+                    const double leftRatio = (selected.left() - plot.left()) / plot.width();
+                    const double rightRatio = (selected.right() - plot.left()) / plot.width();
+                    const double newMin = axis->min() + std::clamp(leftRatio, 0.0, 1.0) * span;
+                    const double newMax = axis->min() + std::clamp(rightRatio, 0.0, 1.0) * span;
+                    if (newMax - newMin > std::numeric_limits<double>::epsilon()) {
+                        axis->setRange(newMin, newMax);
+                    }
+                }
+            }
+        }
+
+        const auto verticalAxes = chart()->axes(Qt::Vertical);
+        for (QAbstractAxis *abstractAxis : verticalAxes) {
+            if (auto *axis = qobject_cast<QValueAxis *>(abstractAxis)) {
+                const double span = axis->max() - axis->min();
+                if (span <= std::numeric_limits<double>::epsilon()) {
+                    continue;
+                }
+                const double topRatio = (selected.top() - plot.top()) / plot.height();
+                const double bottomRatio = (selected.bottom() - plot.top()) / plot.height();
+                const double clampedTop = std::clamp(topRatio, 0.0, 1.0);
+                const double clampedBottom = std::clamp(bottomRatio, 0.0, 1.0);
+                const double valueTop = axis->min() + (1.0 - clampedTop) * span;
+                const double valueBottom = axis->min() + (1.0 - clampedBottom) * span;
+                if (std::abs(valueTop - valueBottom) > std::numeric_limits<double>::epsilon()) {
+                    const double newMin = std::min(valueTop, valueBottom);
+                    const double newMax = std::max(valueTop, valueBottom);
+                    axis->setRange(newMin, newMax);
+                }
+            }
+        }
+    }
+
     ResetCallback m_resetCallback;
+    QRubberBand *m_rubberBand = nullptr;
+    QPoint m_rubberOrigin;
+    bool m_rubberActive = false;
+    bool m_leftPanActive = false;
+    QPoint m_lastPanPosition;
 };
 
 struct ParameterOutcome
@@ -952,17 +1116,41 @@ QWidget *MainWindow::createChartCard(const QString &parameterId, const QString &
     auto *legendRow = new QHBoxLayout;
     legendRow->setSpacing(12);
 
-    auto *magnitude = new QLabel(QStringLiteral("o Magnitude"), frame);
-    magnitude->setProperty("role", QStringLiteral("cardSubtitle"));
+    auto *magnitudeToggle = new QCheckBox(QStringLiteral("Magnitude"), frame);
+    magnitudeToggle->setChecked(true);
+    magnitudeToggle->setProperty("role", QStringLiteral("cardSubtitle"));
+    magnitudeToggle->setIcon(makeSeriesIcon(QColor(QStringLiteral("#4540ff")), Qt::SolidLine));
+    magnitudeToggle->setIconSize(QSize(28, 12));
 
-    auto *phase = new QLabel(QStringLiteral("o Phase"), frame);
-    phase->setProperty("role", QStringLiteral("cardSubtitle"));
+    auto *phaseToggle = new QCheckBox(QStringLiteral("Phase"), frame);
+    phaseToggle->setChecked(true);
+    phaseToggle->setProperty("role", QStringLiteral("cardSubtitle"));
+    phaseToggle->setIcon(makeSeriesIcon(QColor(QStringLiteral("#1d8a43")), Qt::DashLine));
+    phaseToggle->setIconSize(QSize(28, 12));
 
-    legendRow->addWidget(magnitude);
-    legendRow->addWidget(phase);
+    legendRow->addWidget(magnitudeToggle);
+    legendRow->addWidget(phaseToggle);
     legendRow->addStretch();
 
     layout->addLayout(legendRow);
+
+    QObject::connect(magnitudeToggle, &QCheckBox::toggled, this, [magnitudeSeries, axisMagnitude](bool checked) {
+        if (magnitudeSeries) {
+            magnitudeSeries->setVisible(checked);
+        }
+        if (axisMagnitude) {
+            axisMagnitude->setVisible(checked);
+        }
+    });
+
+    QObject::connect(phaseToggle, &QCheckBox::toggled, this, [phaseSeries, axisPhase](bool checked) {
+        if (phaseSeries) {
+            phaseSeries->setVisible(checked);
+        }
+        if (axisPhase) {
+            axisPhase->setVisible(checked);
+        }
+    });
 
     ChartComponents components;
     components.badge = badge;
@@ -979,6 +1167,8 @@ QWidget *MainWindow::createChartCard(const QString &parameterId, const QString &
     components.baseMagnitudeMax = 10.0;
     components.basePhaseMin = -180.0;
     components.basePhaseMax = 180.0;
+    components.magnitudeToggle = magnitudeToggle;
+    components.phaseToggle = phaseToggle;
 
     m_chartComponents.insert(parameterId, components);
     chartView->setResetCallback([this, parameterId]() {

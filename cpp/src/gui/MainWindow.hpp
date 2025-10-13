@@ -19,6 +19,7 @@
 #include <vector>
 
 class QLabel;
+class QCheckBox;
 class QPushButton;
 class QToolButton;
 class QDoubleSpinBox;
@@ -110,6 +111,8 @@ private:
         QValueAxis *axisFrequency = nullptr;
         QValueAxis *axisMagnitude = nullptr;
         QValueAxis *axisPhase = nullptr;
+        QCheckBox *magnitudeToggle = nullptr;
+        QCheckBox *phaseToggle = nullptr;
         double baseFrequencyMin = 0.0;
         double baseFrequencyMax = 1.0;
         double baseMagnitudeMin = -100.0;
