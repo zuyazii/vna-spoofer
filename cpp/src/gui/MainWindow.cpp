@@ -47,16 +47,21 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cmath>
 #include <complex>
-#include <chrono>
 #include <filesystem>
+#include <fstream>
 #include <functional>
+#include <iomanip>
 #include <limits>
+#include <map>
 #include <sstream>
-#include <utility>
 #include <system_error>
+#include <utility>
 #include <vector>
+
+#include <nlohmann/json.hpp>
 
 namespace
 {
@@ -1671,6 +1676,7 @@ void MainWindow::onStartTest()
 
     const auto calibrationPath = m_activeCalibrationPath;
     const QString parameterSummary = selectedParams.join(QStringLiteral(", "));
+    const QStringList selectedParametersList = selectedParams;
 
     prepareChartsForSweep();
 
@@ -1689,7 +1695,7 @@ void MainWindow::onStartTest()
         m_testHintLabel->setText(QStringLiteral("Sweep in progress. This may take a moment..."));
     }
 
-    m_sweepThread = std::thread([this, configuration, calibrationPath, parameterSummary]() {
+    m_sweepThread = std::thread([this, configuration, calibrationPath, parameterSummary, selectedParametersList]() {
         auto results = m_hostCore.run_sweep(configuration);
         const std::string lastError = m_hostCore.last_error_message();
         const bool cancelled = m_cancelRequested.load();
@@ -1706,7 +1712,11 @@ void MainWindow::onStartTest()
              lastError,
              startHz = configuration.start_frequency_hz,
              stopHz = configuration.stop_frequency_hz,
+             points = configuration.points,
+             ifbw = configuration.if_bandwidth_hz,
+             power = configuration.power_dbm,
              parameterSummary,
+             selectedParameters = selectedParametersList,
              results = std::move(results)]() {
                 if (m_sweepThread.joinable()) {
                     m_sweepThread.join();
@@ -1772,8 +1782,17 @@ void MainWindow::onStartTest()
                                     .arg(paramText));
 
                 updateChartsWithResults(results);
+                QList<ParameterExportInfo> exportSummaries;
+                exportSummaries.reserve(static_cast<int>(summary.parameters.size()));
                 for (const auto &parameter : summary.parameters) {
                     const QString parameterId = QString::fromStdString(parameter.name);
+                    ParameterExportInfo info;
+                    info.name = parameterId;
+                    info.worstDb = parameter.worstDb;
+                    info.failFrequencyHz = parameter.failFrequencyHz;
+                    info.pass = parameter.pass;
+                    exportSummaries.append(info);
+
                     if (!m_activeParameters.contains(parameterId)) {
                         continue;
                     }
@@ -1789,6 +1808,16 @@ void MainWindow::onStartTest()
                                                  ? QStringLiteral("Sweep completed successfully. Review the results.")
                                                  : QStringLiteral("Sweep failed thresholds. Review the results."));
                 }
+
+                persistSweepOutputs(results,
+                                    summary.overallPass,
+                                    startHz,
+                                    stopHz,
+                                    points,
+                                    ifbw,
+                                    power,
+                                    selectedParameters,
+                                    exportSummaries);
             },
             Qt::QueuedConnection);
     });
@@ -2078,6 +2107,148 @@ void MainWindow::updateChartsWithResults(const std::vector<librevna::headless::V
                 components.basePhaseMax = 180.0;
             }
         }
+    }
+}
+
+void MainWindow::persistSweepOutputs(const std::vector<librevna::headless::VNAMeasurement> &results,
+                                     bool overallPass,
+                                     double startFrequencyHz,
+                                     double stopFrequencyHz,
+                                     std::uint32_t pointCount,
+                                     double ifBandwidthHz,
+                                     double powerDbm,
+                                     const QStringList &activeParameters,
+                                     const QList<ParameterExportInfo> &parameterSummaries)
+{
+    if (results.empty() || activeParameters.isEmpty()) {
+        return;
+    }
+
+    try {
+        static const QString kOutputRoot = QStringLiteral("output");
+        const QString timestamp = QDateTime::currentDateTime().toString(QStringLiteral("yyyyMMdd_HHmmss"));
+        const QString prefix = QStringLiteral("gui_sweep");
+        const QString folderName = QStringLiteral("%1_result_%2").arg(prefix, timestamp);
+
+        std::filesystem::path basePath = std::filesystem::path(kOutputRoot.toStdString());
+        std::filesystem::create_directories(basePath);
+
+        const std::filesystem::path outputDir = basePath / folderName.toStdString();
+        std::filesystem::create_directories(outputDir);
+
+        const QString fileStem = QStringLiteral("%1_%2").arg(prefix, timestamp);
+        const std::filesystem::path jsonPath = outputDir / (fileStem + QStringLiteral(".json")).toStdString();
+        const std::filesystem::path csvPath = outputDir / (fileStem + QStringLiteral(".csv")).toStdString();
+
+        std::vector<std::string> parameterNames;
+        parameterNames.reserve(activeParameters.size());
+        for (const auto &param : activeParameters) {
+            parameterNames.emplace_back(param.toStdString());
+        }
+
+        std::map<std::string, ParameterExportInfo> summaryByParameter;
+        for (const auto &info : parameterSummaries) {
+            summaryByParameter.emplace(info.name.toStdString(), info);
+        }
+
+        nlohmann::json payload;
+        payload["device"] = {
+            {"serial", m_connectedSerial.isEmpty() ? "unknown" : m_connectedSerial.toStdString()},
+            {"transport", "USB"}};
+        payload["config"] = {
+            {"f_start", startFrequencyHz},
+            {"f_stop", stopFrequencyHz},
+            {"points", pointCount},
+            {"ifbw", ifBandwidthHz},
+            {"power_dBm", powerDbm}};
+        payload["threshold_db"] = kDefaultThresholdDb;
+        payload["overall_pass"] = overallPass;
+        payload["measured_parameters"] = parameterNames;
+
+        nlohmann::json resultsSection = nlohmann::json::object();
+        for (const auto &name : parameterNames) {
+            const auto it = summaryByParameter.find(name);
+            if (it == summaryByParameter.end()) {
+                continue;
+            }
+            nlohmann::json entry = {
+                {"pass", it->second.pass},
+                {"worst_db", it->second.worstDb}};
+            if (!it->second.pass) {
+                entry["fail_at_hz"] = it->second.failFrequencyHz;
+            }
+            resultsSection[name] = std::move(entry);
+        }
+        payload["results"] = std::move(resultsSection);
+
+        nlohmann::json trace = nlohmann::json::array();
+        for (const auto &measurement : results) {
+            nlohmann::json point;
+            point["frequency"] = measurement.frequency;
+            for (const auto &name : parameterNames) {
+                const auto value = measurement.get(name);
+                point[name] = {
+                    {"real", value.real()},
+                    {"imag", value.imag()}};
+            }
+            trace.push_back(std::move(point));
+        }
+        payload["trace"] = std::move(trace);
+
+        {
+            std::ofstream jsonStream(jsonPath);
+            if (!jsonStream) {
+                throw std::runtime_error("Unable to open JSON output path");
+            }
+            jsonStream << std::setw(2) << payload;
+            if (!jsonStream.good()) {
+                throw std::runtime_error("Failed to write JSON output");
+            }
+        }
+
+        constexpr double kRadToDeg = 180.0 / 3.14159265358979323846;
+        {
+            std::ofstream csvStream(csvPath);
+            if (!csvStream) {
+                throw std::runtime_error("Unable to open CSV output path");
+            }
+            csvStream << "Frequency (Hz)";
+            for (const auto &name : parameterNames) {
+                csvStream << ',' << name << "_Real"
+                          << ',' << name << "_Imag"
+                          << ',' << name << "_Magnitude_dB"
+                          << ',' << name << "_Phase_deg";
+            }
+            csvStream << '\n';
+            csvStream << std::setprecision(16);
+
+            for (const auto &measurement : results) {
+                csvStream << measurement.frequency;
+                for (const auto &name : parameterNames) {
+                    const auto value = measurement.get(name);
+                    const double real = value.real();
+                    const double imag = value.imag();
+                    const double magnitude = std::hypot(real, imag);
+                    const double magnitudeDb = 20.0 * std::log10(std::max(magnitude, 1e-12));
+                    const double phaseDeg = std::atan2(imag, real) * kRadToDeg;
+                    csvStream << ',' << real
+                              << ',' << imag
+                              << ',' << magnitudeDb
+                              << ',' << phaseDeg;
+                }
+                csvStream << '\n';
+            }
+            if (!csvStream.good()) {
+                throw std::runtime_error("Failed to write CSV output");
+            }
+        }
+
+        const QString exportPath =
+            QDir::toNativeSeparators(QString::fromStdString(outputDir.u8string()));
+        appendStatusMessage(QStringLiteral("Sweep outputs saved to %1").arg(exportPath));
+    } catch (const std::exception &ex) {
+        appendStatusMessage(QStringLiteral("Failed to save sweep outputs: %1")
+                                .arg(QString::fromLocal8Bit(ex.what())));
     }
 }
 

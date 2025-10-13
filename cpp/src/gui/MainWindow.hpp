@@ -12,6 +12,7 @@
 #include <QtCharts/QLineSeries>
 #include <QtCharts/QValueAxis>
 
+#include <cstdint>
 #include <atomic>
 #include <filesystem>
 #include <optional>
@@ -76,6 +77,22 @@ private:
     void setChartBadgeState(QLabel *badge, const QString &text, const QString &state);
     void setAllChartBadges(const QString &text, const QString &state);
     void resetChartToBaseline(const QString &parameterId);
+    struct ParameterExportInfo
+    {
+        QString name;
+        double worstDb = -300.0;
+        double failFrequencyHz = 0.0;
+        bool pass = true;
+    };
+    void persistSweepOutputs(const std::vector<librevna::headless::VNAMeasurement> &results,
+                             bool overallPass,
+                             double startFrequencyHz,
+                             double stopFrequencyHz,
+                             std::uint32_t pointCount,
+                             double ifBandwidthHz,
+                             double powerDbm,
+                             const QStringList &activeParameters,
+                             const QList<ParameterExportInfo> &parameterSummaries);
 
     QLabel *m_calibrationStatusBadge = nullptr;
     QLabel *m_deviceStatusBadge = nullptr;
