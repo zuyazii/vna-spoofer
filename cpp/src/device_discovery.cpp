@@ -126,13 +126,13 @@ std::vector<DiscoveredDevice> discover_devices(std::string &error_message)
         }
         return lhs.serial < rhs.serial;
     });
-#else
-    devices.push_back(DiscoveredDevice{
-        0xFFFF,
-        0xFFFF,
-        "LibreVNA (simulation)",
-        "STUB-0001",
-    });
+// #else
+//     devices.push_back(DiscoveredDevice{
+//         0xFFFF,
+//         0xFFFF,
+//         "LibreVNA (simulation)",
+//         "STUB-0001",
+//     });
 #endif
 
     return devices;
