@@ -141,6 +141,3 @@ The GUI exposes device scanning, live charts, and sweep controls. Use the chart 
 - **Linker cannot open `vna-spoofer-gui.exe`** – Close any running instance/debugger before rebuilding; Windows locks the output file while the process is active.
 - **Qt DLL errors when launching manually** – Ensure the Qt `bin` directory for your chosen kit is on PATH (for MinGW 13.1 that is `C:\Qt\6.9.2\mingw_64\bin`). Alternatively, run the Qt-supplied `windeployqt` on the executable.
 
----
-
-With the above steps, a new collaborator should be able to clone the repo, build both binaries, and start developing features or diagnostics for LibreVNA hardware within minutes. Happy hacking!
