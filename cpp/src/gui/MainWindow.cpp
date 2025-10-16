@@ -1,8 +1,8 @@
-﻿#include "MainWindow.hpp"
-
+#include "MainWindow.hpp"
 
 #include <QAbstractItemView>
 #include <QButtonGroup>
+#include <QComboBox>
 #include <QCheckBox>
 #include <QtCharts/QAbstractAxis>
 #include <QCoreApplication>
@@ -65,6 +65,54 @@
 
 namespace
 {
+
+constexpr double kDefaultThresholdDb = -10.0;
+constexpr double kMinThresholdDb = -200.0;
+constexpr double kMaxThresholdDb = 50.0;
+
+const QStringList &allParameterIds()
+{
+    static const QStringList ids = {
+        QStringLiteral("S11"),
+        QStringLiteral("S12"),
+        QStringLiteral("S21"),
+        QStringLiteral("S22")};
+    return ids;
+}
+
+const QHash<QString, QString> &parameterDescriptions()
+{
+    static const QHash<QString, QString> descriptions = []() {
+        QHash<QString, QString> map;
+        map.insert(QStringLiteral("S11"), QStringLiteral("Input Return Loss"));
+        map.insert(QStringLiteral("S12"), QStringLiteral("Reverse Transmission"));
+        map.insert(QStringLiteral("S21"), QStringLiteral("Forward Gain"));
+        map.insert(QStringLiteral("S22"), QStringLiteral("Output Return Loss"));
+        return map;
+    }();
+    return descriptions;
+}
+
+const QHash<QString, double> &defaultThresholds()
+{
+    static const QHash<QString, double> defaults = []() {
+        QHash<QString, double> map;
+        for (const auto &id : allParameterIds()) {
+            map.insert(id, kDefaultThresholdDb);
+        }
+        return map;
+    }();
+    return defaults;
+}
+
+std::map<std::string, double> toStdThresholdMap(const QHash<QString, double> &thresholds)
+{
+    std::map<std::string, double> converted;
+    for (auto it = thresholds.constBegin(); it != thresholds.constEnd(); ++it) {
+        converted.emplace(it.key().toStdString(), it.value());
+    }
+    return converted;
+}
 
 QIcon makeSeriesIcon(const QColor &color, Qt::PenStyle style)
 {
@@ -323,6 +371,7 @@ struct ParameterOutcome
     double worstDb = -300.0;
     double failFrequencyHz = 0.0;
     bool pass = true;
+    double thresholdDb = kDefaultThresholdDb;
 };
 
 struct SweepEvaluationSummary
@@ -331,19 +380,20 @@ struct SweepEvaluationSummary
     std::array<ParameterOutcome, 4> parameters{};
 };
 
-constexpr double kDefaultThresholdDb = -10.0;
-
 SweepEvaluationSummary computeSweepSummary(const std::vector<librevna::headless::VNAMeasurement> &measurements,
-                                           double thresholdDb)
+                                           const std::map<std::string, double> &thresholdDbByParameter)
 {
     SweepEvaluationSummary summary{};
-    summary.parameters = {{{"S11", -300.0, 0.0, true},
-                           {"S12", -300.0, 0.0, true},
-                           {"S21", -300.0, 0.0, true},
-                           {"S22", -300.0, 0.0, true}}};
+    summary.parameters = {{{"S11", -300.0, 0.0, true, kDefaultThresholdDb},
+                           {"S12", -300.0, 0.0, true, kDefaultThresholdDb},
+                           {"S21", -300.0, 0.0, true, kDefaultThresholdDb},
+                           {"S22", -300.0, 0.0, true, kDefaultThresholdDb}}};
 
     for (const auto &measurement : measurements) {
         for (auto &parameter : summary.parameters) {
+            const auto mapIt = thresholdDbByParameter.find(parameter.name);
+            const double thresholdDb = (mapIt != thresholdDbByParameter.end()) ? mapIt->second : kDefaultThresholdDb;
+            parameter.thresholdDb = thresholdDb;
             const auto value = measurement.get(parameter.name);
             const double magnitude = std::abs(value);
             const double db = magnitude <= 0.0 ? -300.0 : 20.0 * std::log10(magnitude);
@@ -381,7 +431,12 @@ MainWindow::~MainWindow()
 
 void MainWindow::setupUi()
 {
-    setWindowTitle(QStringLiteral("S Parameter Test System"));
+    initializeTranslations();
+    m_translatableItems.clear();
+
+    registerTranslatable(QStringLiteral("S Parameter Test System"),
+                         [this](const QString &text) { this->setWindowTitle(text); });
+    setWindowTitle(translateText(QStringLiteral("S Parameter Test System")));
     resize(1200, 800);
 
     setStyleSheet(QStringLiteral(R"(
@@ -559,16 +614,51 @@ void MainWindow::setupUi()
     rootLayout->setSpacing(28);
     rootLayout->setContentsMargins(32, 28, 32, 32);
 
-    auto *titleLabel = new QLabel(QStringLiteral("S Parameter Test System"), central);
+    auto *titleLabel = new QLabel(translateText(QStringLiteral("S Parameter Test System")), central);
     titleLabel->setObjectName(QStringLiteral("TitleLabel"));
+    registerTranslatable(QStringLiteral("S Parameter Test System"), [titleLabel](const QString &text) {
+        titleLabel->setText(text);
+    });
 
-    auto *subtitleLabel = new QLabel(QStringLiteral("Professional touchpad GUI for S parameter measurements and analysis"), central);
+    auto *subtitleLabel = new QLabel(translateText(QStringLiteral("Professional touchpad GUI for S parameter measurements and analysis")), central);
     subtitleLabel->setObjectName(QStringLiteral("SubtitleLabel"));
+    registerTranslatable(QStringLiteral("Professional touchpad GUI for S parameter measurements and analysis"),
+                         [subtitleLabel](const QString &text) { subtitleLabel->setText(text); });
 
-    rootLayout->addWidget(titleLabel);
-    rootLayout->setAlignment(titleLabel, Qt::AlignHCenter);
-    rootLayout->addWidget(subtitleLabel);
-    rootLayout->setAlignment(subtitleLabel, Qt::AlignHCenter);
+    auto *titleContainer = new QWidget(central);
+    auto *titleLayout = new QVBoxLayout(titleContainer);
+    titleLayout->setContentsMargins(0, 0, 0, 0);
+    titleLayout->setSpacing(4);
+    titleLayout->addWidget(titleLabel, 0, Qt::AlignHCenter);
+    titleLayout->addWidget(subtitleLabel, 0, Qt::AlignHCenter);
+
+    auto *languageWidget = new QWidget(central);
+    languageWidget->setSizePolicy(QSizePolicy::Minimum, QSizePolicy::Preferred);
+    auto *languageLayout = new QVBoxLayout(languageWidget);
+    languageLayout->setContentsMargins(0, 0, 0, 0);
+    languageLayout->setSpacing(4);
+
+    auto *languageLabel = new QLabel(translateText(QStringLiteral("Language")), languageWidget);
+    languageLabel->setProperty("role", QStringLiteral("cardSubtitle"));
+    registerTranslatable(QStringLiteral("Language"), [languageLabel](const QString &text) {
+        languageLabel->setText(text);
+    });
+    languageLayout->addWidget(languageLabel, 0, Qt::AlignRight);
+
+    m_languageCombo = new QComboBox(languageWidget);
+    m_languageCombo->addItem(QStringLiteral("English"));
+    m_languageCombo->addItem(QStringLiteral("简体中文"));
+    m_languageCombo->addItem(QStringLiteral("繁體中文"));
+    m_languageCombo->setCurrentIndex(indexFromLanguage(m_currentLanguage));
+    connect(m_languageCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &MainWindow::onLanguageSelectionChanged);
+    languageLayout->addWidget(m_languageCombo, 0, Qt::AlignRight);
+
+    auto *headerRow = new QHBoxLayout;
+    headerRow->setSpacing(12);
+    headerRow->addWidget(titleContainer, 1);
+    headerRow->addWidget(languageWidget, 0, Qt::AlignTop);
+
+    rootLayout->addLayout(headerRow);
 
     auto *infoRow = new QHBoxLayout;
     infoRow->setSpacing(24);
@@ -593,7 +683,8 @@ void MainWindow::setupUi()
 
     m_activeParameters.clear();
     resetCharts();
-    appendStatusMessage(QStringLiteral("S Parameter Test System initialized"));
+    appendStatusMessage(translateText(QStringLiteral("S Parameter Test System initialized")));
+    m_lastThresholds = defaultThresholds();
 }
 
 QWidget *MainWindow::createCalibrationPanel()
@@ -609,10 +700,13 @@ QWidget *MainWindow::createCalibrationPanel()
     auto *headerLayout = new QHBoxLayout;
     headerLayout->setSpacing(12);
 
-    auto *title = new QLabel(QStringLiteral("Calibration & Device Control"), frame);
+    auto *title = new QLabel(translateText(QStringLiteral("Calibration & Device Control")), frame);
     title->setProperty("role", QStringLiteral("cardTitle"));
+    registerTranslatable(QStringLiteral("Calibration & Device Control"), [title](const QString &text) {
+        title->setText(text);
+    });
 
-    m_deviceStatusBadge = new QLabel(QStringLiteral("No Device"), frame);
+    m_deviceStatusBadge = new QLabel(translateText(QStringLiteral("No Device")), frame);
     m_deviceStatusBadge->setProperty("role", QStringLiteral("badge"));
 
     headerLayout->addWidget(title);
@@ -623,12 +717,18 @@ QWidget *MainWindow::createCalibrationPanel()
     auto *primaryButtonRow = new QHBoxLayout;
     primaryButtonRow->setSpacing(12);
 
-    m_scanDevicesButton = new QPushButton(QStringLiteral("Scan Devices"), frame);
+    m_scanDevicesButton = new QPushButton(translateText(QStringLiteral("Scan Devices")), frame);
     m_scanDevicesButton->setObjectName(QStringLiteral("SecondaryButton"));
+    registerTranslatable(QStringLiteral("Scan Devices"), [btn = m_scanDevicesButton](const QString &text) {
+        btn->setText(text);
+    });
     connect(m_scanDevicesButton, &QPushButton::clicked, this, &MainWindow::onScanDevices);
 
-    m_loadCalibrationButton = new QPushButton(QStringLiteral("Load External"), frame);
+    m_loadCalibrationButton = new QPushButton(translateText(QStringLiteral("Load External")), frame);
     m_loadCalibrationButton->setObjectName(QStringLiteral("SecondaryButton"));
+    registerTranslatable(QStringLiteral("Load External"), [btn = m_loadCalibrationButton](const QString &text) {
+        btn->setText(text);
+    });
     connect(m_loadCalibrationButton, &QPushButton::clicked, this, &MainWindow::onLoadCalibration);
 
     primaryButtonRow->addWidget(m_scanDevicesButton, 1);
@@ -639,9 +739,12 @@ QWidget *MainWindow::createCalibrationPanel()
     auto *secondaryButtonRow = new QHBoxLayout;
     secondaryButtonRow->setSpacing(12);
 
-    m_connectDeviceButton = new QPushButton(QStringLiteral("Connect"), frame);
+    m_connectDeviceButton = new QPushButton(translateText(QStringLiteral("Connect")), frame);
     m_connectDeviceButton->setObjectName(QStringLiteral("ActionButton"));
     m_connectDeviceButton->setEnabled(false);
+    registerTranslatable(QStringLiteral("Connect"), [btn = m_connectDeviceButton](const QString &text) {
+        btn->setText(text);
+    });
     connect(m_connectDeviceButton, &QPushButton::clicked, this, [this]() {
         if (!m_deviceList) {
             return;
@@ -657,8 +760,11 @@ QWidget *MainWindow::createCalibrationPanel()
         connectToDevice(m_discoveredDevices[static_cast<std::size_t>(index)]);
     });
 
-    m_setupCalibrationButton = new QPushButton(QStringLiteral("Setup New"), frame);
+    m_setupCalibrationButton = new QPushButton(translateText(QStringLiteral("Setup New")), frame);
     m_setupCalibrationButton->setObjectName(QStringLiteral("ActionButton"));
+    registerTranslatable(QStringLiteral("Setup New"), [btn = m_setupCalibrationButton](const QString &text) {
+        btn->setText(text);
+    });
     connect(m_setupCalibrationButton, &QPushButton::clicked, this, &MainWindow::onSetupCalibration);
 
     secondaryButtonRow->addWidget(m_connectDeviceButton, 1);
@@ -675,8 +781,11 @@ QWidget *MainWindow::createCalibrationPanel()
     auto *deviceHeaderRow = new QHBoxLayout;
     deviceHeaderRow->setSpacing(12);
 
-    auto *deviceListLabel = new QLabel(QStringLiteral("Detected LibreVNA Devices"), frame);
+    auto *deviceListLabel = new QLabel(translateText(QStringLiteral("Detected LibreVNA Devices")), frame);
     deviceListLabel->setProperty("role", QStringLiteral("cardSubtitle"));
+    registerTranslatable(QStringLiteral("Detected LibreVNA Devices"), [deviceListLabel](const QString &text) {
+        deviceListLabel->setText(text);
+    });
 
     deviceHeaderRow->addWidget(deviceListLabel);
     deviceHeaderRow->addStretch();
@@ -697,10 +806,13 @@ QWidget *MainWindow::createCalibrationPanel()
     auto *calibrationHeaderRow = new QHBoxLayout;
     calibrationHeaderRow->setSpacing(12);
 
-    auto *calibrationLabel = new QLabel(QStringLiteral("Calibration Files"), frame);
+    auto *calibrationLabel = new QLabel(translateText(QStringLiteral("Calibration Files")), frame);
     calibrationLabel->setProperty("role", QStringLiteral("cardSubtitle"));
+    registerTranslatable(QStringLiteral("Calibration Files"), [calibrationLabel](const QString &text) {
+        calibrationLabel->setText(text);
+    });
 
-    m_calibrationStatusBadge = new QLabel(QStringLiteral("Not Loaded"), frame);
+    m_calibrationStatusBadge = new QLabel(translateText(QStringLiteral("Not Loaded")), frame);
     m_calibrationStatusBadge->setProperty("role", QStringLiteral("badge"));
 
     calibrationHeaderRow->addWidget(calibrationLabel);
@@ -736,10 +848,13 @@ QWidget *MainWindow::createTestControlPanel()
     auto *headerLayout = new QHBoxLayout;
     headerLayout->setSpacing(12);
 
-    auto *title = new QLabel(QStringLiteral("S Parameter Test Control"), frame);
+    auto *title = new QLabel(translateText(QStringLiteral("S Parameter Test Control")), frame);
     title->setProperty("role", QStringLiteral("cardTitle"));
+    registerTranslatable(QStringLiteral("S Parameter Test Control"), [title](const QString &text) {
+        title->setText(text);
+    });
 
-    m_testStateBadge = new QLabel(QStringLiteral("Ready"), frame);
+    m_testStateBadge = new QLabel(translateText(QStringLiteral("Ready")), frame);
     m_testStateBadge->setProperty("role", QStringLiteral("badge"));
 
     headerLayout->addWidget(title);
@@ -752,9 +867,12 @@ QWidget *MainWindow::createTestControlPanel()
     formLayout->setHorizontalSpacing(16);
     formLayout->setVerticalSpacing(12);
 
-    auto addSpinBoxRow = [&](int row, const QString &labelText, QWidget *editor) {
-        auto *label = new QLabel(labelText, frame);
+    auto addSpinBoxRow = [&](int row, const QString &labelKey, QWidget *editor) {
+        auto *label = new QLabel(translateText(labelKey), frame);
         label->setProperty("role", QStringLiteral("cardSubtitle"));
+        registerTranslatable(labelKey, [label](const QString &text) {
+            label->setText(text);
+        });
         formLayout->addWidget(label, row, 0);
         formLayout->addWidget(editor, row, 1);
     };
@@ -786,14 +904,17 @@ QWidget *MainWindow::createTestControlPanel()
 
     layout->addLayout(formLayout);
 
-    auto *parameterLabel = new QLabel(QStringLiteral("S Parameters to Test"), frame);
+    auto *parameterLabel = new QLabel(translateText(QStringLiteral("S Parameters to Test")), frame);
     parameterLabel->setProperty("role", QStringLiteral("cardSubtitle"));
+    registerTranslatable(QStringLiteral("S Parameters to Test"), [parameterLabel](const QString &text) {
+        parameterLabel->setText(text);
+    });
     layout->addWidget(parameterLabel);
 
     auto *parameterRow = new QHBoxLayout;
     parameterRow->setSpacing(12);
 
-    const QStringList parameterIds = {QStringLiteral("S11"), QStringLiteral("S12"), QStringLiteral("S21"), QStringLiteral("S22")};
+    const QStringList parameterIds = allParameterIds();
     for (const auto &id : parameterIds) {
         auto *button = new QToolButton(frame);
         button->setText(id);
@@ -807,26 +928,74 @@ QWidget *MainWindow::createTestControlPanel()
 
     layout->addLayout(parameterRow);
 
+    auto *thresholdLabel = new QLabel(translateText(QStringLiteral("Thresholds (dB)")), frame);
+    thresholdLabel->setProperty("role", QStringLiteral("cardSubtitle"));
+    registerTranslatable(QStringLiteral("Thresholds (dB)"), [thresholdLabel](const QString &text) {
+        thresholdLabel->setText(text);
+    });
+    layout->addWidget(thresholdLabel);
+
+    auto *thresholdGrid = new QGridLayout;
+    thresholdGrid->setHorizontalSpacing(16);
+    thresholdGrid->setVerticalSpacing(8);
+
+    int parameterIndex = 0;
+    for (const auto &id : parameterIds) {
+        auto *label = new QLabel(translateText(QStringLiteral("%1 Threshold")).arg(id), frame);
+        label->setProperty("role", QStringLiteral("cardSubtitle"));
+        registerTranslatable(QStringLiteral("%1 Threshold"), [label, id](const QString &text) {
+            label->setText(text.arg(id));
+        });
+
+        auto *spin = new QDoubleSpinBox(frame);
+        spin->setSuffix(QStringLiteral(" dB"));
+        spin->setDecimals(1);
+        spin->setRange(kMinThresholdDb, kMaxThresholdDb);
+        spin->setSingleStep(0.5);
+        spin->setKeyboardTracking(false);
+        spin->setValue(defaultThresholds().value(id, kDefaultThresholdDb));
+
+        m_thresholdEditors.insert(id, spin);
+
+        const int row = parameterIndex / 2;
+        const int column = (parameterIndex % 2) * 2;
+        thresholdGrid->addWidget(label, row, column);
+        thresholdGrid->addWidget(spin, row, column + 1);
+        ++parameterIndex;
+    }
+    thresholdGrid->setColumnStretch(1, 1);
+    thresholdGrid->setColumnStretch(3, 1);
+    layout->addLayout(thresholdGrid);
+
     auto *actionsRow = new QHBoxLayout;
     actionsRow->setSpacing(12);
 
-    m_startButton = new QPushButton(QStringLiteral("Start Test"), frame);
+    m_startButton = new QPushButton(translateText(QStringLiteral("Start Test")), frame);
     m_startButton->setObjectName(QStringLiteral("ActionButton"));
     m_startButton->setIcon(QIcon(QStringLiteral(":/icons/start.svg")));
     m_startButton->setIconSize(QSize(20, 20));
+    registerTranslatable(QStringLiteral("Start Test"), [btn = m_startButton](const QString &text) {
+        btn->setText(text);
+    });
     connect(m_startButton, &QPushButton::clicked, this, &MainWindow::onStartTest);
 
-    m_stopButton = new QPushButton(QStringLiteral("Stop"), frame);
+    m_stopButton = new QPushButton(translateText(QStringLiteral("Stop")), frame);
     m_stopButton->setObjectName(QStringLiteral("StopButton"));
     m_stopButton->setEnabled(false);
     m_stopButton->setIcon(QIcon(QStringLiteral(":/icons/stop.svg")));
     m_stopButton->setIconSize(QSize(18, 18));
+    registerTranslatable(QStringLiteral("Stop"), [btn = m_stopButton](const QString &text) {
+        btn->setText(text);
+    });
     connect(m_stopButton, &QPushButton::clicked, this, &MainWindow::onStopTest);
 
-    m_resetButton = new QPushButton(QStringLiteral("Reset"), frame);
+    m_resetButton = new QPushButton(translateText(QStringLiteral("Reset")), frame);
     m_resetButton->setObjectName(QStringLiteral("SecondaryButton"));
     m_resetButton->setIcon(QIcon(QStringLiteral(":/icons/reset.svg")));
     m_resetButton->setIconSize(QSize(18, 18));
+    registerTranslatable(QStringLiteral("Reset"), [btn = m_resetButton](const QString &text) {
+        btn->setText(text);
+    });
     connect(m_resetButton, &QPushButton::clicked, this, &MainWindow::onResetTest);
 
     actionsRow->addWidget(m_startButton, 1);
@@ -835,11 +1004,15 @@ QWidget *MainWindow::createTestControlPanel()
 
     layout->addLayout(actionsRow);
 
-    m_testHintLabel = new QLabel(QStringLiteral("Please complete calibration before starting tests"), frame);
+    m_testHintLabel = new QLabel(QString(), frame);
     m_testHintLabel->setProperty("role", QStringLiteral("hint"));
     m_testHintLabel->setWordWrap(true);
 
     layout->addWidget(m_testHintLabel);
+    setTestHint(QStringLiteral("Please complete calibration before starting tests"));
+
+    updateThresholdEditorsEnabled();
+    updateTestState(QStringLiteral("Ready"));
 
     return frame;
 }
@@ -859,20 +1032,30 @@ QWidget *MainWindow::createViewTogglePanel(QWidget *parent)
     toggleLayout->setContentsMargins(6, 6, 6, 6);
     toggleLayout->setSpacing(12);
 
-    m_chartsToggleButton = new QPushButton(QIcon(QStringLiteral(":/icons/charts.svg")), QStringLiteral("S Parameter Charts"), toggleFrame);
+    m_chartsToggleButton = new QPushButton(QIcon(QStringLiteral(":/icons/charts.svg")),
+                                           translateText(QStringLiteral("S Parameter Charts")),
+                                           toggleFrame);
     m_chartsToggleButton->setProperty("role", QStringLiteral("segmented"));
     m_chartsToggleButton->setCheckable(true);
     m_chartsToggleButton->setChecked(true);
     m_chartsToggleButton->setIconSize(QSize(20, 20));
     m_chartsToggleButton->setMinimumHeight(48);
     m_chartsToggleButton->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+    registerTranslatable(QStringLiteral("S Parameter Charts"), [btn = m_chartsToggleButton](const QString &text) {
+        btn->setText(text);
+    });
 
-    m_statusToggleButton = new QPushButton(QIcon(QStringLiteral(":/icons/status.svg")), QStringLiteral("System Status"), toggleFrame);
+    m_statusToggleButton = new QPushButton(QIcon(QStringLiteral(":/icons/status.svg")),
+                                           translateText(QStringLiteral("System Status")),
+                                           toggleFrame);
     m_statusToggleButton->setProperty("role", QStringLiteral("segmented"));
     m_statusToggleButton->setCheckable(true);
     m_statusToggleButton->setIconSize(QSize(20, 20));
     m_statusToggleButton->setMinimumHeight(48);
     m_statusToggleButton->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+    registerTranslatable(QStringLiteral("System Status"), [btn = m_statusToggleButton](const QString &text) {
+        btn->setText(text);
+    });
 
     m_viewToggleGroup = new QButtonGroup(this);
     m_viewToggleGroup->setExclusive(true);
@@ -919,20 +1102,12 @@ QWidget *MainWindow::createChartsPanel()
     layout->setHorizontalSpacing(18);
     layout->setVerticalSpacing(18);
 
-    struct ChartDescriptor {
-        QString id;
-        QString description;
-    };
+    const QStringList ids = allParameterIds();
 
-    const QList<ChartDescriptor> charts = {
-        {QStringLiteral("S11"), QStringLiteral("Input Return Loss")},
-        {QStringLiteral("S12"), QStringLiteral("Reverse Transmission")},
-        {QStringLiteral("S21"), QStringLiteral("Forward Gain")},
-        {QStringLiteral("S22"), QStringLiteral("Output Return Loss")}
-    };
-
-    for (int index = 0; index < charts.size(); ++index) {
-        auto *card = createChartCard(charts[index].id, charts[index].description);
+    for (int index = 0; index < ids.size(); ++index) {
+        const QString &parameterId = ids.at(index);
+        const QString description = parameterDescriptions().value(parameterId, parameterId);
+        auto *card = createChartCard(parameterId, description);
         int row = index / 2;
         int column = index % 2;
         layout->addWidget(card, row, column);
@@ -957,8 +1132,11 @@ QWidget *MainWindow::createStatusPanel()
     auto *headerRow = new QHBoxLayout;
     headerRow->setSpacing(12);
 
-    auto *title = new QLabel(QStringLiteral("System Status"), panel);
+    auto *title = new QLabel(translateText(QStringLiteral("System Status")), panel);
     title->setProperty("role", QStringLiteral("cardTitle"));
+    registerTranslatable(QStringLiteral("System Status"), [title](const QString &text) {
+        title->setText(text);
+    });
 
     headerRow->addWidget(title);
     headerRow->addStretch();
@@ -969,7 +1147,7 @@ QWidget *MainWindow::createStatusPanel()
     metaRow->setSpacing(20);
 
     auto makeMetaChip = [&](const QIcon &icon,
-                            const QString &caption,
+                            const QString &captionKey,
                             const QString &valueText,
                             const QString &valueObjectName) {
         auto *chip = new QWidget(panel);
@@ -989,8 +1167,11 @@ QWidget *MainWindow::createStatusPanel()
         textLayout->setContentsMargins(0, 0, 0, 0);
         textLayout->setSpacing(2);
 
-        auto *captionLabel = new QLabel(caption, chip);
+        auto *captionLabel = new QLabel(translateText(captionKey), chip);
         captionLabel->setProperty("role", QStringLiteral("cardSubtitle"));
+        registerTranslatable(captionKey, [captionLabel](const QString &text) {
+            captionLabel->setText(text);
+        });
         textLayout->addWidget(captionLabel);
 
         auto *valueLabel = new QLabel(valueText, chip);
@@ -1019,8 +1200,11 @@ QWidget *MainWindow::createStatusPanel()
 
     layout->addLayout(metaRow);
 
-    auto *activityLabel = new QLabel(QStringLiteral("Activity Log"), panel);
+    auto *activityLabel = new QLabel(translateText(QStringLiteral("Activity Log")), panel);
     activityLabel->setProperty("role", QStringLiteral("cardSubtitle"));
+    registerTranslatable(QStringLiteral("Activity Log"), [activityLabel](const QString &text) {
+        activityLabel->setText(text);
+    });
     layout->addWidget(activityLabel);
 
     m_activityLog = new QListWidget(panel);
@@ -1045,10 +1229,13 @@ QWidget *MainWindow::createChartCard(const QString &parameterId, const QString &
     auto *title = new QLabel(parameterId, frame);
     title->setProperty("role", QStringLiteral("cardTitle"));
 
-    auto *subtitle = new QLabel(description, frame);
+    auto *subtitle = new QLabel(translateText(description), frame);
     subtitle->setProperty("role", QStringLiteral("cardSubtitle"));
+    registerTranslatable(description, [subtitle](const QString &text) {
+        subtitle->setText(text);
+    });
 
-    auto *badge = new QLabel(QStringLiteral("Inactive"), frame);
+    auto *badge = new QLabel(translateText(QStringLiteral("Inactive")), frame);
     badge->setProperty("role", QStringLiteral("cardBadge"));
     badge->setProperty("state", QStringLiteral("inactive"));
 
@@ -1073,19 +1260,28 @@ QWidget *MainWindow::createChartCard(const QString &parameterId, const QString &
     chart->legend()->hide();
 
     auto *axisFrequency = new QValueAxis(chart);
-    axisFrequency->setTitleText(QStringLiteral("Frequency (GHz)"));
+    axisFrequency->setTitleText(translateText(QStringLiteral("Frequency (GHz)")));
+    registerTranslatable(QStringLiteral("Frequency (GHz)"), [axisFrequency](const QString &text) {
+        axisFrequency->setTitleText(text);
+    });
     axisFrequency->setLabelFormat(QStringLiteral("%.2f"));
     axisFrequency->setRange(0.0, 1.0);
     chart->addAxis(axisFrequency, Qt::AlignBottom);
 
     auto *axisMagnitude = new QValueAxis(chart);
-    axisMagnitude->setTitleText(QStringLiteral("Magnitude (dB)"));
+    axisMagnitude->setTitleText(translateText(QStringLiteral("Magnitude (dB)")));
+    registerTranslatable(QStringLiteral("Magnitude (dB)"), [axisMagnitude](const QString &text) {
+        axisMagnitude->setTitleText(text);
+    });
     axisMagnitude->setLabelFormat(QStringLiteral("%.1f"));
     axisMagnitude->setRange(-100.0, 10.0);
     chart->addAxis(axisMagnitude, Qt::AlignLeft);
 
     auto *axisPhase = new QValueAxis(chart);
-    axisPhase->setTitleText(QStringLiteral("Phase (deg)"));
+    axisPhase->setTitleText(translateText(QStringLiteral("Phase (deg)")));
+    registerTranslatable(QStringLiteral("Phase (deg)"), [axisPhase](const QString &text) {
+        axisPhase->setTitleText(text);
+    });
     axisPhase->setLabelFormat(QStringLiteral("%.0f"));
     axisPhase->setRange(-180.0, 180.0);
     chart->addAxis(axisPhase, Qt::AlignRight);
@@ -1109,6 +1305,16 @@ QWidget *MainWindow::createChartCard(const QString &parameterId, const QString &
     phaseSeries->attachAxis(axisFrequency);
     phaseSeries->attachAxis(axisPhase);
 
+    auto *thresholdSeries = new QLineSeries(chart);
+    QPen thresholdPen(QColor(QStringLiteral("#d12b57")));
+    thresholdPen.setWidthF(1.5);
+    thresholdPen.setStyle(Qt::DotLine);
+    thresholdSeries->setPen(thresholdPen);
+    chart->addSeries(thresholdSeries);
+    thresholdSeries->attachAxis(axisFrequency);
+    thresholdSeries->attachAxis(axisMagnitude);
+    thresholdSeries->setVisible(false);
+
     auto *chartView = new InteractiveChartView(chart, chartArea);
     chartView->setRenderHint(QPainter::Antialiasing);
     chartView->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
@@ -1121,17 +1327,23 @@ QWidget *MainWindow::createChartCard(const QString &parameterId, const QString &
     auto *legendRow = new QHBoxLayout;
     legendRow->setSpacing(12);
 
-    auto *magnitudeToggle = new QCheckBox(QStringLiteral("Magnitude"), frame);
+    auto *magnitudeToggle = new QCheckBox(translateText(QStringLiteral("Magnitude")), frame);
     magnitudeToggle->setChecked(true);
     magnitudeToggle->setProperty("role", QStringLiteral("cardSubtitle"));
     magnitudeToggle->setIcon(makeSeriesIcon(QColor(QStringLiteral("#4540ff")), Qt::SolidLine));
     magnitudeToggle->setIconSize(QSize(28, 12));
+    registerTranslatable(QStringLiteral("Magnitude"), [magnitudeToggle](const QString &text) {
+        magnitudeToggle->setText(text);
+    });
 
-    auto *phaseToggle = new QCheckBox(QStringLiteral("Phase"), frame);
+    auto *phaseToggle = new QCheckBox(translateText(QStringLiteral("Phase")), frame);
     phaseToggle->setChecked(true);
     phaseToggle->setProperty("role", QStringLiteral("cardSubtitle"));
     phaseToggle->setIcon(makeSeriesIcon(QColor(QStringLiteral("#1d8a43")), Qt::DashLine));
     phaseToggle->setIconSize(QSize(28, 12));
+    registerTranslatable(QStringLiteral("Phase"), [phaseToggle](const QString &text) {
+        phaseToggle->setText(text);
+    });
 
     legendRow->addWidget(magnitudeToggle);
     legendRow->addWidget(phaseToggle);
@@ -1139,12 +1351,15 @@ QWidget *MainWindow::createChartCard(const QString &parameterId, const QString &
 
     layout->addLayout(legendRow);
 
-    QObject::connect(magnitudeToggle, &QCheckBox::toggled, this, [magnitudeSeries, axisMagnitude](bool checked) {
+    QObject::connect(magnitudeToggle, &QCheckBox::toggled, this, [magnitudeSeries, axisMagnitude, thresholdSeries](bool checked) {
         if (magnitudeSeries) {
             magnitudeSeries->setVisible(checked);
         }
         if (axisMagnitude) {
             axisMagnitude->setVisible(checked);
+        }
+        if (thresholdSeries) {
+            thresholdSeries->setVisible(checked && thresholdSeries->count() > 0);
         }
     });
 
@@ -1174,6 +1389,7 @@ QWidget *MainWindow::createChartCard(const QString &parameterId, const QString &
     components.basePhaseMax = 180.0;
     components.magnitudeToggle = magnitudeToggle;
     components.phaseToggle = phaseToggle;
+    components.thresholdSeries = thresholdSeries;
 
     m_chartComponents.insert(parameterId, components);
     chartView->setResetCallback([this, parameterId]() {
@@ -1192,7 +1408,7 @@ void MainWindow::refreshCalibrationList()
     m_calibrationList->clear();
 
     if (m_calibrationDirectory.empty() || !std::filesystem::exists(m_calibrationDirectory)) {
-        auto *item = new QListWidgetItem(QStringLiteral("Calibration folder not found"), m_calibrationList);
+        auto *item = new QListWidgetItem(translateText(QStringLiteral("Calibration folder not found")), m_calibrationList);
         item->setFlags(Qt::NoItemFlags);
         return;
     }
@@ -1227,7 +1443,7 @@ void MainWindow::refreshCalibrationList()
                                 : canonicalOr(m_activeCalibrationPath);
 
     if (entries.empty()) {
-        auto *item = new QListWidgetItem(QStringLiteral("No calibration files found"), m_calibrationList);
+        auto *item = new QListWidgetItem(translateText(QStringLiteral("No calibration files found")), m_calibrationList);
         item->setFlags(Qt::NoItemFlags);
         return;
     }
@@ -1283,11 +1499,13 @@ std::filesystem::path MainWindow::findCalibrationDirectory() const
 
 void MainWindow::updateDeviceStatus(const QString &status, const QString &styleSheet)
 {
+    m_currentDeviceStatusKey = status;
+    m_currentDeviceStatusStyle = styleSheet;
     if (!m_deviceStatusBadge) {
         return;
     }
 
-    m_deviceStatusBadge->setText(status);
+    m_deviceStatusBadge->setText(translateText(status));
     m_deviceStatusBadge->setStyleSheet(styleSheet);
 }
 
@@ -1300,7 +1518,7 @@ void MainWindow::connectToDevice(const librevna::headless::DiscoveredDevice &dev
                                ? QStringLiteral("<no-serial>")
                                : QString::fromStdString(device.serial);
 
-    appendStatusMessage(QStringLiteral("Connecting to %1 (%2)...").arg(label, serial));
+    appendStatusMessage(translateText(QStringLiteral("Connecting to %1 (%2)...")).arg(label, serial));
 
     if (m_hostCore.is_connected()) {
         m_hostCore.disconnect();
@@ -1310,10 +1528,10 @@ void MainWindow::connectToDevice(const librevna::headless::DiscoveredDevice &dev
         updateDeviceStatus(QStringLiteral("Connection Failed"),
                            QStringLiteral("background:#fdecef; color:#d12b57; padding:4px 14px; border-radius:14px; font-weight:600;"));
         const QString message = QString::fromStdString(m_hostCore.last_error_message());
-        appendStatusMessage(QStringLiteral("Connection failed: %1").arg(message));
+        appendStatusMessage(translateText(QStringLiteral("Connection failed: %1")).arg(message));
         QMessageBox::warning(this,
-                             QStringLiteral("Connection failed"),
-                             QStringLiteral("Unable to connect to %1.\n%2").arg(label, message));
+                             translateText(QStringLiteral("Connection Failed")),
+                             translateText(QStringLiteral("Unable to connect to %1.\n%2")).arg(label, message));
         return;
     }
 
@@ -1321,13 +1539,11 @@ void MainWindow::connectToDevice(const librevna::headless::DiscoveredDevice &dev
     updateDeviceStatus(QStringLiteral("Connected"),
                        QStringLiteral("background:#eefaf1; color:#1d8a43; padding:4px 14px; border-radius:14px; font-weight:600;"));
 
-    appendStatusMessage(QStringLiteral("Connected to %1 (%2)").arg(label, serial));
-    if (m_testHintLabel) {
-        if (!m_activeCalibrationPath.empty()) {
-            m_testHintLabel->setText(QStringLiteral("Device ready. Calibration loaded. You can start a sweep."));
-        } else {
-            m_testHintLabel->setText(QStringLiteral("Device connected. Load a calibration file to begin."));
-        }
+    appendStatusMessage(translateText(QStringLiteral("Connected to %1 (%2)")).arg(label, serial));
+    if (!m_activeCalibrationPath.empty()) {
+        setTestHint(QStringLiteral("Device ready. Calibration loaded. You can start a sweep."));
+    } else {
+        setTestHint(QStringLiteral("Device connected. Load a calibration file to begin."));
     }
 }
 
@@ -1340,8 +1556,8 @@ void MainWindow::applyCalibrationFromPath(const QString &path)
     std::filesystem::path calPath(path.toStdString());
     if (!std::filesystem::exists(calPath)) {
         QMessageBox::warning(this,
-                             QStringLiteral("Calibration load failed"),
-                             QStringLiteral("The selected calibration file does not exist:\n%1").arg(path));
+                             translateText(QStringLiteral("Calibration load failed")),
+                             translateText(QStringLiteral("The selected calibration file does not exist:\n%1")).arg(path));
         return;
     }
 
@@ -1357,10 +1573,10 @@ void MainWindow::applyCalibrationFromPath(const QString &path)
         updateCalibrationStatus(QStringLiteral("Load Failed"),
                                 QStringLiteral("background:#fdecef; color:#d12b57; padding:4px 14px; border-radius:14px; font-weight:600;"));
         const QString message = QString::fromStdString(m_hostCore.last_error_message());
-        appendStatusMessage(QStringLiteral("Failed to load calibration: %1").arg(message));
+        appendStatusMessage(translateText(QStringLiteral("Failed to load calibration: %1")).arg(message));
         QMessageBox::warning(this,
-                             QStringLiteral("Calibration load failed"),
-                             QStringLiteral("Unable to load calibration file.\n%1").arg(message));
+                             translateText(QStringLiteral("Calibration load failed")),
+                             translateText(QStringLiteral("Unable to load calibration file.\n%1")).arg(message));
         return;
     }
 
@@ -1375,14 +1591,12 @@ void MainWindow::applyCalibrationFromPath(const QString &path)
     refreshCalibrationList();
     updateCalibrationStatus(QStringLiteral("Loaded"),
                             QStringLiteral("background:#eefaf1; color:#1d8a43; padding:4px 14px; border-radius:14px; font-weight:600;"));
-    appendStatusMessage(QStringLiteral("Calibration loaded: %1").arg(path));
+    appendStatusMessage(translateText(QStringLiteral("Calibration loaded: %1")).arg(path));
 
-    if (m_testHintLabel) {
-        if (m_hostCore.is_connected()) {
-            m_testHintLabel->setText(QStringLiteral("Calibration loaded. You can start a test when ready."));
-        } else {
-            m_testHintLabel->setText(QStringLiteral("Calibration loaded. Connect a device to start testing."));
-        }
+    if (m_hostCore.is_connected()) {
+        setTestHint(QStringLiteral("Calibration loaded. You can start a test when ready."));
+    } else {
+        setTestHint(QStringLiteral("Calibration loaded. Connect a device to start testing."));
     }
 }
 
@@ -1409,7 +1623,7 @@ void MainWindow::onScanDevices()
         m_scanDevicesButton->setEnabled(false);
     }
 
-    appendStatusMessage(QStringLiteral("Scanning for LibreVNA devices..."));
+    appendStatusMessage(translateText(QStringLiteral("Scanning for LibreVNA devices...")));
 
     std::string errorMessage;
     auto devices = librevna::headless::discover_devices(errorMessage);
@@ -1421,10 +1635,11 @@ void MainWindow::onScanDevices()
     if (!errorMessage.empty()) {
         updateDeviceStatus(QStringLiteral("Scan Failed"),
                            QStringLiteral("background:#fdecef; color:#d12b57; padding:4px 14px; border-radius:14px; font-weight:600;"));
-        appendStatusMessage(QStringLiteral("Device scan failed: %1").arg(QString::fromStdString(errorMessage)));
+        const QString errorText = QString::fromStdString(errorMessage);
+        appendStatusMessage(translateText(QStringLiteral("Device scan failed: %1")).arg(errorText));
         QMessageBox::warning(this,
-                             QStringLiteral("Device scan failed"),
-                             QStringLiteral("Unable to enumerate LibreVNA devices.\n%1").arg(QString::fromStdString(errorMessage)));
+                             translateText(QStringLiteral("Device scan failed")),
+                             translateText(QStringLiteral("Unable to enumerate LibreVNA devices.\n%1")).arg(errorText));
         return;
     }
 
@@ -1434,11 +1649,11 @@ void MainWindow::onScanDevices()
     m_deviceList->clear();
 
     if (m_discoveredDevices.empty()) {
-        auto *item = new QListWidgetItem(QStringLiteral("No devices detected"), m_deviceList);
+        auto *item = new QListWidgetItem(translateText(QStringLiteral("No devices detected")), m_deviceList);
         item->setFlags(Qt::NoItemFlags);
         updateDeviceStatus(QStringLiteral("No Devices"),
                            QStringLiteral("background:#fff4db; color:#ad7300; padding:4px 14px; border-radius:14px; font-weight:600;"));
-        appendStatusMessage(QStringLiteral("No LibreVNA devices detected."));
+        appendStatusMessage(translateText(QStringLiteral("No LibreVNA devices detected.")));
         m_connectedSerial.clear();
         if (m_connectDeviceButton) {
             m_connectDeviceButton->setEnabled(false);
@@ -1454,11 +1669,11 @@ void MainWindow::onScanDevices()
                                    ? QStringLiteral("<no-serial>")
                                    : QString::fromStdString(device.serial);
 
-        const QString text = QStringLiteral("%1 - %2").arg(label, serial);
+        const QString text = translateText(QStringLiteral("%1 - %2")).arg(label, serial);
 
         auto *item = new QListWidgetItem(text, m_deviceList);
         item->setData(Qt::UserRole, static_cast<int>(index));
-        item->setToolTip(QStringLiteral("VID:PID %1:%2\nSerial: %3")
+        item->setToolTip(translateText(QStringLiteral("VID:PID %1:%2\nSerial: %3"))
                              .arg(QString::number(device.vendor_id, 16).rightJustified(4, QLatin1Char('0')).toUpper(),
                                   QString::number(device.product_id, 16).rightJustified(4, QLatin1Char('0')).toUpper(),
                                   serial));
@@ -1490,7 +1705,7 @@ void MainWindow::onScanDevices()
         m_connectDeviceButton->setEnabled(!m_discoveredDevices.empty());
     }
 
-    appendStatusMessage(QStringLiteral("Found %1 LibreVNA device(s)")
+    appendStatusMessage(translateText(QStringLiteral("Found %1 LibreVNA device(s)"))
                         .arg(static_cast<qulonglong>(m_discoveredDevices.size())));
     onDeviceSelectionChanged();
 }
@@ -1529,6 +1744,11 @@ void MainWindow::onCalibrationActivated(QListWidgetItem *item)
     applyCalibrationFromPath(path);
 }
 
+void MainWindow::onLanguageSelectionChanged(int index)
+{
+    setLanguage(languageFromIndex(index));
+}
+
 void MainWindow::appendStatusMessage(const QString &message)
 {
     if (!m_activityLog) {
@@ -1548,21 +1768,24 @@ void MainWindow::appendStatusMessage(const QString &message)
 
 void MainWindow::updateCalibrationStatus(const QString &status, const QString &styleSheet)
 {
+    m_currentCalibrationStatusKey = status;
+    m_currentCalibrationStatusStyle = styleSheet;
     if (!m_calibrationStatusBadge) {
         return;
     }
 
-    m_calibrationStatusBadge->setText(status);
+    m_calibrationStatusBadge->setText(translateText(status));
     m_calibrationStatusBadge->setStyleSheet(styleSheet);
 }
 
 void MainWindow::updateTestState(const QString &state)
 {
+    m_currentTestStateKey = state;
     if (!m_testStateBadge) {
         return;
     }
 
-    m_testStateBadge->setText(state);
+    m_testStateBadge->setText(translateText(state));
 }
 
 void MainWindow::updateControlsForRunning(bool running)
@@ -1600,41 +1823,37 @@ void MainWindow::onLoadCalibration()
 
 void MainWindow::onSetupCalibration()
 {
-    appendStatusMessage(QStringLiteral("Calibration setup requested"));
+    appendStatusMessage(translateText(QStringLiteral("Calibration setup requested")));
     QMessageBox::information(this,
-                             QStringLiteral("Calibration Setup"),
-                             QStringLiteral("Calibration capture is currently available from the CLI workflow.\n"
-                                            "Use the command-line tools to generate a new calibration file, then select it here."));
+                             translateText(QStringLiteral("Calibration Setup")),
+                             translateText(QStringLiteral("Calibration capture is currently available from the CLI workflow.\n"
+                                                            "Use the command-line tools to generate a new calibration file, then select it here.")));
 }
 
 void MainWindow::onStartTest()
 {
     if (m_sweepInProgress) {
-        appendStatusMessage(QStringLiteral("Sweep already in progress"));
+        appendStatusMessage(translateText(QStringLiteral("Sweep already in progress")));
         return;
     }
 
     ensureSweepThreadFinished();
 
     if (!m_hostCore.is_connected()) {
-        appendStatusMessage(QStringLiteral("Cannot start sweep: no device connected"));
+        appendStatusMessage(translateText(QStringLiteral("Cannot start sweep: no device connected")));
         QMessageBox::warning(this,
-                             QStringLiteral("No device connected"),
-                             QStringLiteral("Connect to a LibreVNA device before starting a sweep."));
-        if (m_testHintLabel) {
-            m_testHintLabel->setText(QStringLiteral("Connect a device to start a sweep."));
-        }
+                             translateText(QStringLiteral("No device connected")),
+                             translateText(QStringLiteral("Connect to a LibreVNA device before starting a sweep.")));
+        setTestHint(QStringLiteral("Connect a device to start a sweep."));
         return;
     }
 
     if (m_activeCalibrationPath.empty()) {
-        appendStatusMessage(QStringLiteral("Cannot start sweep: calibration not loaded"));
+        appendStatusMessage(translateText(QStringLiteral("Cannot start sweep: calibration not loaded")));
         QMessageBox::warning(this,
-                             QStringLiteral("Calibration required"),
-                             QStringLiteral("Load a calibration file before starting a sweep."));
-        if (m_testHintLabel) {
-            m_testHintLabel->setText(QStringLiteral("Load a calibration file to continue."));
-        }
+                             translateText(QStringLiteral("Calibration required")),
+                             translateText(QStringLiteral("Load a calibration file before starting a sweep.")));
+        setTestHint(QStringLiteral("Load a calibration file to continue."));
         return;
     }
 
@@ -1645,9 +1864,7 @@ void MainWindow::onStartTest()
         }
     }
     if (selectedParams.isEmpty()) {
-        if (m_testHintLabel) {
-            m_testHintLabel->setText(QStringLiteral("Select at least one S parameter before starting the test."));
-        }
+        setTestHint(QStringLiteral("Select at least one S parameter before starting the test."));
         return;
     }
 
@@ -1655,8 +1872,8 @@ void MainWindow::onStartTest()
     const double stopGHz = m_stopFrequencySpin->value();
     if (stopGHz <= startGHz) {
         QMessageBox::warning(this,
-                             QStringLiteral("Invalid sweep range"),
-                             QStringLiteral("Stop frequency must be greater than start frequency."));
+                             translateText(QStringLiteral("Invalid sweep range")),
+                             translateText(QStringLiteral("Stop frequency must be greater than start frequency.")));
         return;
     }
 
@@ -1674,13 +1891,17 @@ void MainWindow::onStartTest()
         m_activeParameters.insert(param);
     }
 
+    const auto thresholdValues = collectThresholds();
+    const auto thresholdMap = toStdThresholdMap(thresholdValues);
+    m_lastThresholds = thresholdValues;
+
     const auto calibrationPath = m_activeCalibrationPath;
     const QString parameterSummary = selectedParams.join(QStringLiteral(", "));
     const QStringList selectedParametersList = selectedParams;
 
     prepareChartsForSweep();
 
-    appendStatusMessage(QStringLiteral("Starting sweep: %1 GHz -> %2 GHz (%3 points) [%4]")
+    appendStatusMessage(translateText(QStringLiteral("Starting sweep: %1 GHz -> %2 GHz (%3 points) [%4]"))
                         .arg(startGHz, 0, 'f', 3)
                         .arg(stopGHz, 0, 'f', 3)
                         .arg(static_cast<qulonglong>(configuration.points))
@@ -1691,17 +1912,20 @@ void MainWindow::onStartTest()
     m_cancelRequested = false;
     m_sweepInProgress = true;
 
-    if (m_testHintLabel) {
-        m_testHintLabel->setText(QStringLiteral("Sweep in progress. This may take a moment..."));
-    }
+    setTestHint(QStringLiteral("Sweep in progress. This may take a moment..."));
 
-    m_sweepThread = std::thread([this, configuration, calibrationPath, parameterSummary, selectedParametersList]() {
+    m_sweepThread = std::thread([this,
+                                 configuration,
+                                 calibrationPath,
+                                 parameterSummary,
+                                 selectedParametersList,
+                                 thresholdMap]() {
         auto results = m_hostCore.run_sweep(configuration);
         const std::string lastError = m_hostCore.last_error_message();
         const bool cancelled = m_cancelRequested.load();
         const std::size_t resultCount = results.size();
 
-        const auto summary = computeSweepSummary(results, kDefaultThresholdDb);
+        const auto summary = computeSweepSummary(results, thresholdMap);
 
         QMetaObject::invokeMethod(
             this,
@@ -1732,29 +1956,27 @@ void MainWindow::onStartTest()
 
                 if (cancelled) {
                     updateTestState(QStringLiteral("Cancelled"));
-                    appendStatusMessage(QStringLiteral("Sweep cancelled after %.3f GHz -> %.3f GHz")
+                    appendStatusMessage(translateText(QStringLiteral("Sweep cancelled after %.3f GHz -> %.3f GHz"))
                                         .arg(startGHzLocal, 0, 'f', 3)
                                         .arg(stopGHzLocal, 0, 'f', 3));
                     resetCharts();
                     setAllChartBadges(QStringLiteral("Cancelled"), QStringLiteral("inactive"));
-                    if (m_testHintLabel) {
-                        m_testHintLabel->setText(QStringLiteral("Sweep cancelled. Adjust settings and start again."));
-                    }
+                    setTestHint(QStringLiteral("Sweep cancelled. Adjust settings and start again."));
                     return;
                 }
 
                 if (resultCount == 0) {
                     updateTestState(QStringLiteral("Error"));
-                    const QString errorMsg = QString::fromStdString(lastError.empty() ? "No data returned" : lastError);
-                    appendStatusMessage(QStringLiteral("Sweep failed: %1").arg(errorMsg));
+                    const QString errorMsg = lastError.empty()
+                                                ? translateText(QStringLiteral("No data returned"))
+                                                : QString::fromStdString(lastError);
+                    appendStatusMessage(translateText(QStringLiteral("Sweep failed: %1")).arg(errorMsg));
                     QMessageBox::warning(this,
-                                         QStringLiteral("Sweep failed"),
-                                         QStringLiteral("Sweep did not produce any data.\n%1").arg(errorMsg));
+                                         translateText(QStringLiteral("Sweep failed")),
+                                         translateText(QStringLiteral("Sweep did not produce any data.\n%1")).arg(errorMsg));
                     resetCharts();
                     setAllChartBadges(QStringLiteral("Error"), QStringLiteral("fail"));
-                    if (m_testHintLabel) {
-                        m_testHintLabel->setText(QStringLiteral("Sweep failed. Check connections and try again."));
-                    }
+                    setTestHint(QStringLiteral("Sweep failed. Check connections and try again."));
                     return;
                 }
 
@@ -1774,10 +1996,10 @@ void MainWindow::onStartTest()
                 }
                 updateTestState(pass ? QStringLiteral("Pass") : QStringLiteral("Fail"));
                 const QString paramText = parameterSummary.isEmpty()
-                                              ? QStringLiteral("S-parameters")
+                                              ? translateText(QStringLiteral("S-parameters"))
                                               : parameterSummary;
-                appendStatusMessage(QStringLiteral("Sweep completed: %1 (%2 points) [%3]")
-                                    .arg(pass ? QStringLiteral("PASS") : QStringLiteral("FAIL"))
+                appendStatusMessage(translateText(QStringLiteral("Sweep completed: %1 (%2 points) [%3]"))
+                                    .arg(pass ? translateText(QStringLiteral("PASS")) : translateText(QStringLiteral("FAIL")))
                                     .arg(static_cast<qulonglong>(resultCount))
                                     .arg(paramText));
 
@@ -1791,6 +2013,7 @@ void MainWindow::onStartTest()
                     info.worstDb = parameter.worstDb;
                     info.failFrequencyHz = parameter.failFrequencyHz;
                     info.pass = parameter.pass;
+                    info.thresholdDb = parameter.thresholdDb;
                     exportSummaries.append(info);
 
                     if (!m_activeParameters.contains(parameterId)) {
@@ -1803,14 +2026,12 @@ void MainWindow::onStartTest()
                     }
                 }
 
-                if (m_testHintLabel) {
-                    m_testHintLabel->setText(pass
-                                                 ? QStringLiteral("Sweep completed successfully. Review the results.")
-                                                 : QStringLiteral("Sweep failed thresholds. Review the results."));
-                }
+                setTestHint(pass
+                                ? QStringLiteral("Sweep completed successfully. Review the results.")
+                                : QStringLiteral("Sweep failed thresholds. Review the results."));
 
                 persistSweepOutputs(results,
-                                    summary.overallPass,
+                                    pass,
                                     startHz,
                                     stopHz,
                                     points,
@@ -1830,12 +2051,10 @@ void MainWindow::onStopTest()
     }
 
     m_cancelRequested = true;
-    appendStatusMessage(QStringLiteral("Sweep stop requested"));
+    appendStatusMessage(translateText(QStringLiteral("Sweep stop requested")));
     updateTestState(QStringLiteral("Stopping"));
 
-    if (m_testHintLabel) {
-        m_testHintLabel->setText(QStringLiteral("Attempting to stop the sweep..."));
-    }
+    setTestHint(QStringLiteral("Attempting to stop the sweep..."));
 }
 
 void MainWindow::onResetTest()
@@ -1855,23 +2074,26 @@ void MainWindow::onResetTest()
     m_stopFrequencySpin->setValue(6.0);
     m_pointsSpin->setValue(201);
 
-    appendStatusMessage(QStringLiteral("Parameters reset to defaults"));
+    resetThresholdEditorsToDefault();
+    updateThresholdEditorsEnabled();
+
+    appendStatusMessage(translateText(QStringLiteral("Parameters reset to defaults")));
     updateTestState(QStringLiteral("Ready"));
     updateControlsForRunning(false);
     resetCharts();
     m_activeParameters.clear();
 
-    if (m_testHintLabel) {
-        if (m_hostCore.is_connected() && !m_activeCalibrationPath.empty()) {
-            m_testHintLabel->setText(QStringLiteral("Ready for new sweep with default parameters."));
-        } else {
-            m_testHintLabel->setText(QStringLiteral("Connect a device and load calibration before starting tests."));
-        }
+    if (m_hostCore.is_connected() && !m_activeCalibrationPath.empty()) {
+        setTestHint(QStringLiteral("Ready for new sweep with default parameters."));
+    } else {
+        setTestHint(QStringLiteral("Connect a device and load calibration before starting tests."));
     }
 }
 
 void MainWindow::onSParameterToggled(bool /*checked*/)
 {
+    updateThresholdEditorsEnabled();
+
     QStringList selected;
     for (auto *button : m_parameterButtons) {
         if (button->isChecked()) {
@@ -1884,15 +2106,13 @@ void MainWindow::onSParameterToggled(bool /*checked*/)
     }
 
     if (selected.isEmpty()) {
-        m_testHintLabel->setText(QStringLiteral("Select at least one S parameter before starting the test."));
+        setTestHint(QStringLiteral("Select at least one S parameter before starting the test."));
     } else if (m_hostCore.is_connected() && !m_activeCalibrationPath.empty()) {
-        m_testHintLabel->setText(QStringLiteral("Ready to sweep %1").arg(selected.join(QStringLiteral(", "))));
+        setTestHint(QStringLiteral("Ready to sweep %1"), QList<QVariant>{selected.join(QStringLiteral(", "))});
     } else if (!m_hostCore.is_connected()) {
-        m_testHintLabel->setText(QStringLiteral("Connect a device to sweep %1")
-                                     .arg(selected.join(QStringLiteral(", "))));
+        setTestHint(QStringLiteral("Connect a device to sweep %1"), QList<QVariant>{selected.join(QStringLiteral(", "))});
     } else {
-        m_testHintLabel->setText(QStringLiteral("Load calibration to sweep %1")
-                                     .arg(selected.join(QStringLiteral(", "))));
+        setTestHint(QStringLiteral("Load calibration to sweep %1"), QList<QVariant>{selected.join(QStringLiteral(", "))});
     }
 }
 
@@ -1928,6 +2148,7 @@ void MainWindow::prepareChartsForSweep()
         }
     }
 }
+
 
 void MainWindow::resetCharts()
 {
@@ -2055,56 +2276,94 @@ void MainWindow::updateChartsWithResults(const std::vector<librevna::headless::V
             if (components.phaseSeries) {
                 components.phaseSeries->clear();
             }
+            if (components.thresholdSeries) {
+                components.thresholdSeries->clear();
+                components.thresholdSeries->setVisible(false);
+            }
             resetChartToBaseline(parameterId);
             setChartBadgeState(components.badge, QStringLiteral("Inactive"), QStringLiteral("inactive"));
             continue;
         }
 
-        const auto magnitudePoints = magnitudeData.value(parameterId);
-        const auto phasePoints = phaseData.value(parameterId);
+    const auto magnitudePoints = magnitudeData.value(parameterId);
+    const auto phasePoints = phaseData.value(parameterId);
+    const double thresholdDb = m_lastThresholds.value(parameterId, defaultThresholds().value(parameterId, kDefaultThresholdDb));
 
-        if (components.magnitudeSeries) {
-            components.magnitudeSeries->replace(magnitudePoints);
-        }
-        if (components.phaseSeries) {
-            components.phaseSeries->replace(phasePoints);
-        }
+    if (components.magnitudeSeries) {
+        components.magnitudeSeries->replace(magnitudePoints);
+    }
+    if (components.phaseSeries) {
+        components.phaseSeries->replace(phasePoints);
+    }
 
-        if (components.axisFrequency && minFrequency <= maxFrequency) {
-            components.axisFrequency->setRange(frequencyMin, frequencyMax);
-            components.baseFrequencyMin = frequencyMin;
-            components.baseFrequencyMax = frequencyMax;
-        }
+    if (components.axisFrequency && minFrequency <= maxFrequency) {
+        components.axisFrequency->setRange(frequencyMin, frequencyMax);
+        components.baseFrequencyMin = frequencyMin;
+        components.baseFrequencyMax = frequencyMax;
+    }
 
-        if (components.axisMagnitude) {
-            const auto range = magnitudeRanges.value(parameterId);
-            if (!magnitudePoints.isEmpty() && range.min <= range.max) {
-                const double padding = 3.0;
-                const double minValue = range.min - padding;
-                const double maxValue = range.max + padding;
-                components.axisMagnitude->setRange(minValue, maxValue);
-                components.baseMagnitudeMin = minValue;
-                components.baseMagnitudeMax = maxValue;
-            } else {
-                components.axisMagnitude->setRange(-100.0, 10.0);
-                components.baseMagnitudeMin = -100.0;
-                components.baseMagnitudeMax = 10.0;
+    if (components.axisMagnitude) {
+        const auto rangeEntry = magnitudeRanges.value(parameterId);
+        double rangeMin = rangeEntry.min;
+        double rangeMax = rangeEntry.max;
+        if (std::isfinite(thresholdDb)) {
+            rangeMin = std::min(rangeMin, thresholdDb);
+            rangeMax = std::max(rangeMax, thresholdDb);
+        }
+        if (!magnitudePoints.isEmpty() && rangeEntry.min <= rangeEntry.max) {
+            const double padding = 3.0;
+            const double minValue = rangeMin - padding;
+            const double maxValue = rangeMax + padding;
+            components.axisMagnitude->setRange(minValue, maxValue);
+            components.baseMagnitudeMin = minValue;
+            components.baseMagnitudeMax = maxValue;
+        } else {
+            double minValue = -100.0;
+            double maxValue = 10.0;
+            if (std::isfinite(thresholdDb)) {
+                minValue = std::min(minValue, thresholdDb - 3.0);
+                maxValue = std::max(maxValue, thresholdDb + 3.0);
             }
+            components.axisMagnitude->setRange(minValue, maxValue);
+            components.baseMagnitudeMin = minValue;
+            components.baseMagnitudeMax = maxValue;
         }
+    }
 
-        if (components.axisPhase) {
-            const auto range = phaseRanges.value(parameterId);
-            if (!phasePoints.isEmpty() && range.min <= range.max) {
-                const double padding = 10.0;
-                const double minValue = range.min - padding;
-                const double maxValue = range.max + padding;
-                components.axisPhase->setRange(minValue, maxValue);
-                components.basePhaseMin = minValue;
-                components.basePhaseMax = maxValue;
+    if (components.axisPhase) {
+        const auto range = phaseRanges.value(parameterId);
+        if (!phasePoints.isEmpty() && range.min <= range.max) {
+            const double padding = 10.0;
+            const double minValue = range.min - padding;
+            const double maxValue = range.max + padding;
+            components.axisPhase->setRange(minValue, maxValue);
+            components.basePhaseMin = minValue;
+            components.basePhaseMax = maxValue;
+        } else {
+            components.axisPhase->setRange(-180.0, 180.0);
+            components.basePhaseMin = -180.0;
+            components.basePhaseMax = 180.0;
+        }
+    }
+
+        if (components.thresholdSeries) {
+            if (std::isfinite(thresholdDb) && components.axisFrequency) {
+                const double startX = components.axisFrequency->min();
+                const double endX = components.axisFrequency->max();
+                if (std::isfinite(startX) && std::isfinite(endX) && endX - startX > std::numeric_limits<double>::epsilon()) {
+                    QVector<QPointF> thresholdPoints;
+                    thresholdPoints.append(QPointF(startX, thresholdDb));
+                    thresholdPoints.append(QPointF(endX, thresholdDb));
+                    components.thresholdSeries->replace(thresholdPoints);
+                    const bool show = !components.magnitudeToggle || components.magnitudeToggle->isChecked();
+                    components.thresholdSeries->setVisible(show);
+                } else {
+                    components.thresholdSeries->clear();
+                    components.thresholdSeries->setVisible(false);
+                }
             } else {
-                components.axisPhase->setRange(-180.0, 180.0);
-                components.basePhaseMin = -180.0;
-                components.basePhaseMax = 180.0;
+                components.thresholdSeries->clear();
+                components.thresholdSeries->setVisible(false);
             }
         }
     }
@@ -2120,6 +2379,7 @@ void MainWindow::persistSweepOutputs(const std::vector<librevna::headless::VNAMe
                                      const QStringList &activeParameters,
                                      const QList<ParameterExportInfo> &parameterSummaries)
 {
+    const QHash<QString, double> &thresholds = m_lastThresholds;
     if (results.empty() || activeParameters.isEmpty()) {
         return;
     }
@@ -2151,6 +2411,11 @@ void MainWindow::persistSweepOutputs(const std::vector<librevna::headless::VNAMe
             summaryByParameter.emplace(info.name.toStdString(), info);
         }
 
+        nlohmann::json thresholdsSection = nlohmann::json::object();
+        for (auto it = thresholds.constBegin(); it != thresholds.constEnd(); ++it) {
+            thresholdsSection[it.key().toStdString()] = it.value();
+        }
+
         nlohmann::json payload;
         payload["device"] = {
             {"serial", m_connectedSerial.isEmpty() ? "unknown" : m_connectedSerial.toStdString()},
@@ -2161,9 +2426,9 @@ void MainWindow::persistSweepOutputs(const std::vector<librevna::headless::VNAMe
             {"points", pointCount},
             {"ifbw", ifBandwidthHz},
             {"power_dBm", powerDbm}};
-        payload["threshold_db"] = kDefaultThresholdDb;
         payload["overall_pass"] = overallPass;
         payload["measured_parameters"] = parameterNames;
+        payload["thresholds_db"] = std::move(thresholdsSection);
 
         nlohmann::json resultsSection = nlohmann::json::object();
         for (const auto &name : parameterNames) {
@@ -2173,7 +2438,8 @@ void MainWindow::persistSweepOutputs(const std::vector<librevna::headless::VNAMe
             }
             nlohmann::json entry = {
                 {"pass", it->second.pass},
-                {"worst_db", it->second.worstDb}};
+                {"worst_db", it->second.worstDb},
+                {"threshold_db", it->second.thresholdDb}};
             if (!it->second.pass) {
                 entry["fail_at_hz"] = it->second.failFrequencyHz;
             }
@@ -2245,9 +2511,9 @@ void MainWindow::persistSweepOutputs(const std::vector<librevna::headless::VNAMe
 
         const QString exportPath =
             QDir::toNativeSeparators(QString::fromStdString(outputDir.u8string()));
-        appendStatusMessage(QStringLiteral("Sweep outputs saved to %1").arg(exportPath));
+        appendStatusMessage(translateText(QStringLiteral("Sweep outputs saved to %1")).arg(exportPath));
     } catch (const std::exception &ex) {
-        appendStatusMessage(QStringLiteral("Failed to save sweep outputs: %1")
+        appendStatusMessage(translateText(QStringLiteral("Failed to save sweep outputs: %1"))
                                 .arg(QString::fromLocal8Bit(ex.what())));
     }
 }
@@ -2258,7 +2524,7 @@ void MainWindow::setChartBadgeState(QLabel *badge, const QString &text, const QS
         return;
     }
 
-    badge->setText(text);
+    badge->setText(translateText(text));
     if (!state.isEmpty()) {
         badge->setProperty("state", state);
         if (auto *style = badge->style()) {
@@ -2300,4 +2566,327 @@ void MainWindow::resetChartToBaseline(const QString &parameterId)
     if (components.axisPhase) {
         components.axisPhase->setRange(components.basePhaseMin, components.basePhaseMax);
     }
+    if (components.thresholdSeries) {
+        components.thresholdSeries->clear();
+        components.thresholdSeries->setVisible(false);
+    }
+}
+
+void MainWindow::updateThresholdEditorsEnabled()
+{
+    QSet<QString> active;
+    for (auto *button : m_parameterButtons) {
+        if (!button) {
+            continue;
+        }
+        if (button->isChecked()) {
+            active.insert(button->text());
+        }
+    }
+
+    for (auto it = m_thresholdEditors.begin(); it != m_thresholdEditors.end(); ++it) {
+        if (auto *editor = it.value()) {
+            editor->setEnabled(active.contains(it.key()));
+        }
+    }
+}
+
+void MainWindow::resetThresholdEditorsToDefault()
+{
+    const auto defaults = defaultThresholds();
+    for (auto it = m_thresholdEditors.begin(); it != m_thresholdEditors.end(); ++it) {
+        if (auto *editor = it.value()) {
+            editor->setValue(defaults.value(it.key(), kDefaultThresholdDb));
+        }
+    }
+}
+
+QHash<QString, double> MainWindow::collectThresholds() const
+{
+    QHash<QString, double> thresholds = defaultThresholds();
+    for (auto it = m_thresholdEditors.constBegin(); it != m_thresholdEditors.constEnd(); ++it) {
+        if (auto *editor = it.value()) {
+            thresholds.insert(it.key(), editor->value());
+        }
+    }
+    return thresholds;
+}
+
+void MainWindow::registerTranslatable(const QString &key, std::function<void(const QString &)> setter)
+{
+    if (!setter) {
+        return;
+    }
+    setter(translateText(key));
+    m_translatableItems.append(TranslatableItem{key, std::move(setter)});
+}
+
+void MainWindow::initializeTranslations()
+{
+    m_translationZhHans.clear();
+    m_translationZhHant.clear();
+
+    const auto add = [&](const QString &english, const QString &zhHans, const QString &zhHant) {
+        m_translationZhHans.insert(english, zhHans);
+        m_translationZhHant.insert(english, zhHant);
+    };
+
+    add(QStringLiteral("S Parameter Test System"), QStringLiteral("S参数测试系统"), QStringLiteral("S參數測試系統"));
+    add(QStringLiteral("Professional touchpad GUI for S parameter measurements and analysis"),
+        QStringLiteral("用于S参数测量与分析的专业触控界面"),
+        QStringLiteral("用於S參數量測與分析的專業觸控介面"));
+    add(QStringLiteral("Calibration & Device Control"), QStringLiteral("校准与设备控制"), QStringLiteral("校準與設備控制"));
+    add(QStringLiteral("Detected LibreVNA Devices"), QStringLiteral("检测到的 LibreVNA 设备"), QStringLiteral("偵測到的 LibreVNA 裝置"));
+    add(QStringLiteral("Calibration Files"), QStringLiteral("校准文件"), QStringLiteral("校準檔案"));
+    add(QStringLiteral("Not Loaded"), QStringLiteral("未加载"), QStringLiteral("未載入"));
+    add(QStringLiteral("No calibration files found"), QStringLiteral("未找到校准文件"), QStringLiteral("找不到校準檔案"));
+    add(QStringLiteral("Calibration folder not found"), QStringLiteral("未找到校准文件夹"), QStringLiteral("找不到校準資料夾"));
+    add(QStringLiteral("Load External"), QStringLiteral("导入外部文件"), QStringLiteral("匯入外部檔案"));
+    add(QStringLiteral("Scan Devices"), QStringLiteral("扫描设备"), QStringLiteral("掃描設備"));
+    add(QStringLiteral("Connect"), QStringLiteral("连接"), QStringLiteral("連線"));
+    add(QStringLiteral("Setup New"), QStringLiteral("新建校准"), QStringLiteral("新增校準"));
+    add(QStringLiteral("No Device"), QStringLiteral("无设备"), QStringLiteral("無設備"));
+    add(QStringLiteral("No Device Detected"), QStringLiteral("未检测到设备"), QStringLiteral("未偵測到裝置"));
+    add(QStringLiteral("Device Detected"), QStringLiteral("设备已检测"), QStringLiteral("裝置已偵測"));
+    add(QStringLiteral("Connected"), QStringLiteral("已连接"), QStringLiteral("已連線"));
+    add(QStringLiteral("Connection Failed"), QStringLiteral("连接失败"), QStringLiteral("連線失敗"));
+    add(QStringLiteral("Scan Failed"), QStringLiteral("扫描失败"), QStringLiteral("掃描失敗"));
+    add(QStringLiteral("No Devices"), QStringLiteral("无设备"), QStringLiteral("無設備"));
+    add(QStringLiteral("No devices detected"), QStringLiteral("未检测到任何设备"), QStringLiteral("未偵測到任何裝置"));
+    add(QStringLiteral("No LibreVNA devices detected."), QStringLiteral("未检测到 LibreVNA 设备。"), QStringLiteral("未偵測到 LibreVNA 裝置。"));
+    add(QStringLiteral("Found %1 LibreVNA device(s)"), QStringLiteral("发现 %1 台 LibreVNA 设备"), QStringLiteral("發現 %1 台 LibreVNA 裝置"));
+    add(QStringLiteral("Connecting to %1 (%2)..."), QStringLiteral("正在连接 %1（%2）..."), QStringLiteral("正在連線 %1（%2）..."));
+    add(QStringLiteral("Connected to %1 (%2)"), QStringLiteral("已连接到 %1（%2）"), QStringLiteral("已連線至 %1（%2）"));
+    add(QStringLiteral("Unable to connect to %1.\n%2"), QStringLiteral("无法连接到 %1。\n%2"), QStringLiteral("無法連線至 %1。\n%2"));
+    add(QStringLiteral("Device connected. Load a calibration file to begin."),
+        QStringLiteral("设备已连接，请加载校准文件后开始。"),
+        QStringLiteral("裝置已連線，請載入校準檔案後開始。"));
+    add(QStringLiteral("Device ready. Calibration loaded. You can start a sweep."),
+        QStringLiteral("设备已就绪，校准已加载，可以开始扫频。"),
+        QStringLiteral("裝置已就緒，校準已載入，可以開始掃頻。"));
+    add(QStringLiteral("Calibration load failed"), QStringLiteral("校准加载失败"), QStringLiteral("校準載入失敗"));
+    add(QStringLiteral("Calibration loaded. Connect a device to start testing."),
+        QStringLiteral("校准已加载，请连接设备后开始测试。"),
+        QStringLiteral("校準已載入，請連線裝置後開始測試。"));
+    add(QStringLiteral("Calibration loaded. You can start a test when ready."),
+        QStringLiteral("校准已加载，准备好后即可开始测试。"),
+        QStringLiteral("校準已載入，準備好後即可開始測試。"));
+    add(QStringLiteral("Calibration setup requested"), QStringLiteral("已请求进行校准设置"), QStringLiteral("已請求進行校準設定"));
+    add(QStringLiteral("Calibration Setup"), QStringLiteral("校准设置"), QStringLiteral("校準設定"));
+    add(QStringLiteral("Calibration capture is currently available from the CLI workflow.\nUse the command-line tools to generate a new calibration file, then select it here."),
+        QStringLiteral("当前仅可通过命令行流程进行校准采集。\n请使用命令行工具生成新的校准文件，然后在此处选择它。"),
+        QStringLiteral("目前僅能透過命令列流程進行校準量測。\n請使用命令列工具產生新的校準檔案，然後在此選擇。"));
+    add(QStringLiteral("S Parameter Test Control"), QStringLiteral("S参数测试控制"), QStringLiteral("S參數測試控制"));
+    add(QStringLiteral("Ready"), QStringLiteral("就绪"), QStringLiteral("就緒"));
+    add(QStringLiteral("Running"), QStringLiteral("运行中"), QStringLiteral("執行中"));
+    add(QStringLiteral("Stopping"), QStringLiteral("正在停止"), QStringLiteral("正在停止"));
+    add(QStringLiteral("Cancelled"), QStringLiteral("已取消"), QStringLiteral("已取消"));
+    add(QStringLiteral("Error"), QStringLiteral("错误"), QStringLiteral("錯誤"));
+    add(QStringLiteral("Pass"), QStringLiteral("通过"), QStringLiteral("通過"));
+    add(QStringLiteral("Fail"), QStringLiteral("失败"), QStringLiteral("失敗"));
+    add(QStringLiteral("PASS"), QStringLiteral("通过"), QStringLiteral("通過"));
+    add(QStringLiteral("FAIL"), QStringLiteral("失败"), QStringLiteral("失敗"));
+    add(QStringLiteral("Inactive"), QStringLiteral("未激活"), QStringLiteral("未啟用"));
+    add(QStringLiteral("Pending"), QStringLiteral("待执行"), QStringLiteral("待執行"));
+    add(QStringLiteral("Start Frequency"), QStringLiteral("起始频率"), QStringLiteral("起始頻率"));
+    add(QStringLiteral("Stop Frequency"), QStringLiteral("终止频率"), QStringLiteral("終止頻率"));
+    add(QStringLiteral("Number of Points"), QStringLiteral("采样点数"), QStringLiteral("取樣點數"));
+    add(QStringLiteral("S Parameters to Test"), QStringLiteral("待测试的 S 参数"), QStringLiteral("待測試的 S 參數"));
+    add(QStringLiteral("Thresholds (dB)"), QStringLiteral("阈值 (dB)"), QStringLiteral("閾值 (dB)"));
+    add(QStringLiteral("%1 Threshold"), QStringLiteral("%1 阈值"), QStringLiteral("%1 閾值"));
+    add(QStringLiteral("Start Test"), QStringLiteral("开始测试"), QStringLiteral("開始測試"));
+    add(QStringLiteral("Stop"), QStringLiteral("停止"), QStringLiteral("停止"));
+    add(QStringLiteral("Reset"), QStringLiteral("重置"), QStringLiteral("重設"));
+    add(QStringLiteral("Please complete calibration before starting tests"),
+        QStringLiteral("开始测试前请先完成校准"),
+        QStringLiteral("開始測試前請先完成校準"));
+    add(QStringLiteral("Select at least one S parameter before starting the test."),
+        QStringLiteral("开始测试前请至少选择一个 S 参数。"),
+        QStringLiteral("開始測試前請至少選擇一個 S 參數。"));
+    add(QStringLiteral("S Parameter Charts"), QStringLiteral("S参数图表"), QStringLiteral("S參數圖表"));
+    add(QStringLiteral("System Status"), QStringLiteral("系统状态"), QStringLiteral("系統狀態"));
+    add(QStringLiteral("Last Update"), QStringLiteral("最近更新"), QStringLiteral("最近更新"));
+    add(QStringLiteral("Total Messages"), QStringLiteral("消息总数"), QStringLiteral("訊息總數"));
+    add(QStringLiteral("Activity Log"), QStringLiteral("活动日志"), QStringLiteral("活動記錄"));
+    add(QStringLiteral("Input Return Loss"), QStringLiteral("输入回波损耗"), QStringLiteral("輸入反射損耗"));
+    add(QStringLiteral("Reverse Transmission"), QStringLiteral("反向传输"), QStringLiteral("反向傳輸"));
+    add(QStringLiteral("Forward Gain"), QStringLiteral("正向增益"), QStringLiteral("順向增益"));
+    add(QStringLiteral("Output Return Loss"), QStringLiteral("输出回波损耗"), QStringLiteral("輸出反射損耗"));
+    add(QStringLiteral("Magnitude"), QStringLiteral("幅度"), QStringLiteral("幅度"));
+    add(QStringLiteral("Phase"), QStringLiteral("相位"), QStringLiteral("相位"));
+    add(QStringLiteral("Magnitude (dB)"), QStringLiteral("幅度 (dB)"), QStringLiteral("幅度 (dB)"));
+    add(QStringLiteral("Phase (deg)"), QStringLiteral("相位 (°)"), QStringLiteral("相位 (°)"));
+    add(QStringLiteral("VID:PID %1:%2\nSerial: %3"), QStringLiteral("VID:PID %1:%2\n序列号: %3"), QStringLiteral("VID:PID %1:%2\n序號: %3"));
+    add(QStringLiteral("Select Calibration File"), QStringLiteral("选择校准文件"), QStringLiteral("選擇校準檔案"));
+    add(QStringLiteral("Calibration Files (*.cal);;All Files (*.*)"),
+        QStringLiteral("校准文件 (*.cal);;所有文件 (*.*)"),
+        QStringLiteral("校準檔案 (*.cal);;所有檔案 (*.*)"));
+    add(QStringLiteral("Calibration load failed"), QStringLiteral("校准加载失败"), QStringLiteral("校準載入失敗"));
+    add(QStringLiteral("Failed to load calibration: %1"), QStringLiteral("加载校准失败：%1"), QStringLiteral("載入校準失敗：%1"));
+    add(QStringLiteral("Unable to load calibration file.\n%1"), QStringLiteral("无法加载校准文件。\n%1"), QStringLiteral("無法載入校準檔案。\n%1"));
+    add(QStringLiteral("The selected calibration file does not exist:\n%1"), QStringLiteral("所选校准文件不存在：\n%1"), QStringLiteral("所選校準檔案不存在：\n%1"));
+    add(QStringLiteral("Calibration loaded: %1"), QStringLiteral("已加载校准：%1"), QStringLiteral("已載入校準：%1"));
+    add(QStringLiteral("Cannot start sweep: no device connected"), QStringLiteral("无法启动扫频：未连接设备"), QStringLiteral("無法啟動掃頻：未連線裝置"));
+    add(QStringLiteral("Cannot start sweep: calibration not loaded"), QStringLiteral("无法启动扫频：未加载校准"), QStringLiteral("無法啟動掃頻：未載入校準"));
+    add(QStringLiteral("No device connected"), QStringLiteral("未连接设备"), QStringLiteral("未連線裝置"));
+    add(QStringLiteral("Connect a device to start a sweep."), QStringLiteral("请连接设备后再开始扫频。"), QStringLiteral("請連線裝置後再開始掃頻。"));
+    add(QStringLiteral("Load a calibration file before starting a sweep."), QStringLiteral("扫频前请先加载校准文件。"), QStringLiteral("掃頻前請先載入校準檔案。"));
+    add(QStringLiteral("Load a calibration file to continue."), QStringLiteral("请加载校准文件以继续。"), QStringLiteral("請載入校準檔案以繼續。"));
+    add(QStringLiteral("Load calibration to sweep %1"), QStringLiteral("请加载校准以扫频 %1"), QStringLiteral("請載入校準以掃頻 %1"));
+    add(QStringLiteral("Connect a device to sweep %1"), QStringLiteral("请连接设备以扫频 %1"), QStringLiteral("請連線裝置以掃頻 %1"));
+    add(QStringLiteral("Ready to sweep %1"), QStringLiteral("准备扫频 %1"), QStringLiteral("準備掃頻 %1"));
+    add(QStringLiteral("Connect a device and load calibration before starting tests."),
+        QStringLiteral("开始测试前请连接设备并加载校准。"),
+        QStringLiteral("開始測試前請連線裝置並載入校準。"));
+    add(QStringLiteral("Ready for new sweep with default parameters."),
+        QStringLiteral("已准备好使用默认参数进行新的扫频。"),
+        QStringLiteral("已準備好使用預設參數進行新的掃頻。"));
+    add(QStringLiteral("Sweep already in progress"), QStringLiteral("扫频正在进行中"), QStringLiteral("掃頻正在進行中"));
+    add(QStringLiteral("Starting sweep: %1 GHz -> %2 GHz (%3 points) [%4]"),
+        QStringLiteral("开始扫频：%1 GHz -> %2 GHz（%3 点）[%4]"),
+        QStringLiteral("開始掃頻：%1 GHz -> %2 GHz（%3 點）[%4]"));
+    add(QStringLiteral("Sweep in progress. This may take a moment..."),
+        QStringLiteral("扫频进行中，这可能需要一些时间..."),
+        QStringLiteral("掃頻進行中，可能需要一些時間..."));
+    add(QStringLiteral("Sweep stop requested"), QStringLiteral("已请求停止扫频"), QStringLiteral("已請求停止掃頻"));
+    add(QStringLiteral("Attempting to stop the sweep..."),
+        QStringLiteral("正在尝试停止扫频..."),
+        QStringLiteral("正在嘗試停止掃頻..."));
+    add(QStringLiteral("Sweep cancelled after %.3f GHz -> %.3f GHz"),
+        QStringLiteral("扫频在 %.3f GHz -> %.3f GHz 后被取消"),
+        QStringLiteral("掃頻在 %.3f GHz -> %.3f GHz 後被取消"));
+    add(QStringLiteral("Sweep cancelled. Adjust settings and start again."),
+        QStringLiteral("扫频已取消，请调整设置后重新开始。"),
+        QStringLiteral("掃頻已取消，請調整設定後重新開始。"));
+    add(QStringLiteral("Sweep failed: %1"), QStringLiteral("扫频失败：%1"), QStringLiteral("掃頻失敗：%1"));
+    add(QStringLiteral("Sweep failed thresholds. Review the results."),
+        QStringLiteral("扫频未通过阈值，请检查结果。"),
+        QStringLiteral("掃頻未通過閾值，請檢查結果。"));
+    add(QStringLiteral("Sweep completed successfully. Review the results."),
+        QStringLiteral("扫频完成，请查看结果。"),
+        QStringLiteral("掃頻完成，請檢視結果。"));
+    add(QStringLiteral("Sweep failed. Check connections and try again."),
+        QStringLiteral("扫频失败，请检查连接后重试。"),
+        QStringLiteral("掃頻失敗，請檢查連線後重試。"));
+    add(QStringLiteral("Sweep did not produce any data.\n%1"),
+        QStringLiteral("扫频未产生任何数据。\n%1"),
+        QStringLiteral("掃頻未產生任何資料。\n%1"));
+    add(QStringLiteral("Sweep outputs saved to %1"), QStringLiteral("扫频结果已保存到 %1"), QStringLiteral("掃頻結果已儲存到 %1"));
+    add(QStringLiteral("Failed to save sweep outputs: %1"), QStringLiteral("保存扫频结果失败：%1"), QStringLiteral("儲存掃頻結果失敗：%1"));
+    add(QStringLiteral("Frequency (GHz)"), QStringLiteral("频率 (GHz)"), QStringLiteral("頻率 (GHz)"));
+    add(QStringLiteral("No data returned"), QStringLiteral("无数据返回"), QStringLiteral("無資料返回"));
+    add(QStringLiteral("Invalid sweep range"), QStringLiteral("扫频范围无效"), QStringLiteral("掃頻範圍無效"));
+    add(QStringLiteral("Stop frequency must be greater than start frequency."),
+        QStringLiteral("终止频率必须大于起始频率。"),
+        QStringLiteral("終止頻率必須大於起始頻率。"));
+    add(QStringLiteral("S Parameter Test System initialized"), QStringLiteral("S参数测试系统已初始化"), QStringLiteral("S參數測試系統已初始化"));
+    add(QStringLiteral("S-parameters"), QStringLiteral("S 参数"), QStringLiteral("S 參數"));
+    add(QStringLiteral("Device scan failed"), QStringLiteral("设备扫描失败"), QStringLiteral("裝置掃描失敗"));
+    add(QStringLiteral("Device scan failed: %1"), QStringLiteral("设备扫描失败：%1"), QStringLiteral("裝置掃描失敗：%1"));
+    add(QStringLiteral("Scanning for LibreVNA devices..."), QStringLiteral("正在扫描 LibreVNA 设备..."), QStringLiteral("正在掃描 LibreVNA 裝置..."));
+    add(QStringLiteral("%1 - %2"), QStringLiteral("%1 - %2"), QStringLiteral("%1 - %2"));
+    add(QStringLiteral("Calibration required"), QStringLiteral("需要校准"), QStringLiteral("需要校準"));
+    add(QStringLiteral("Cannot start sweep: calibration not loaded"), QStringLiteral("无法启动扫频：未加载校准"), QStringLiteral("無法啟動掃頻：未載入校準"));
+    add(QStringLiteral("No device connected"), QStringLiteral("未连接设备"), QStringLiteral("未連線裝置"));
+    add(QStringLiteral("Device connected. Load a calibration file to begin."),
+        QStringLiteral("设备已连接，请加载校准文件后开始。"),
+        QStringLiteral("裝置已連線，請載入校準檔案後開始。"));
+    add(QStringLiteral("Calibration loaded. You can start a test when ready."),
+        QStringLiteral("校准已加载，准备好后即可开始测试。"),
+        QStringLiteral("校準已載入，準備好後即可開始測試。"));
+    add(QStringLiteral("Calibration loaded. Connect a device to start testing."),
+        QStringLiteral("校准已加载，请连接设备后开始测试。"),
+        QStringLiteral("校準已載入，請連線裝置後開始測試。"));
+    add(QStringLiteral("Language"), QStringLiteral("语言"), QStringLiteral("語言"));
+}
+
+void MainWindow::applyTranslations()
+{
+    for (const auto &item : std::as_const(m_translatableItems)) {
+        if (item.setter) {
+            item.setter(translateText(item.key));
+        }
+    }
+
+    if (!m_currentCalibrationStatusKey.isEmpty()) {
+        updateCalibrationStatus(m_currentCalibrationStatusKey, m_currentCalibrationStatusStyle);
+    }
+    if (!m_currentDeviceStatusKey.isEmpty()) {
+        updateDeviceStatus(m_currentDeviceStatusKey, m_currentDeviceStatusStyle);
+    }
+    if (!m_currentTestStateKey.isEmpty()) {
+        updateTestState(m_currentTestStateKey);
+    }
+    if (!m_testHintKey.isEmpty()) {
+        setTestHint(m_testHintKey, m_testHintArgs);
+    }
+}
+
+void MainWindow::setLanguage(Language language)
+{
+    if (m_currentLanguage == language) {
+        return;
+    }
+    m_currentLanguage = language;
+    if (m_languageCombo) {
+        const int index = indexFromLanguage(language);
+        if (index >= 0 && m_languageCombo->currentIndex() != index) {
+            QSignalBlocker blocker(m_languageCombo);
+            m_languageCombo->setCurrentIndex(index);
+        }
+    }
+    applyTranslations();
+}
+
+QString MainWindow::translateText(const QString &text) const
+{
+    switch (m_currentLanguage) {
+    case Language::SimplifiedChinese:
+        return m_translationZhHans.value(text, text);
+    case Language::TraditionalChinese:
+        return m_translationZhHant.value(text, text);
+    case Language::English:
+    default:
+        return text;
+    }
+}
+
+MainWindow::Language MainWindow::languageFromIndex(int index) const
+{
+    switch (index) {
+    case 1:
+        return Language::SimplifiedChinese;
+    case 2:
+        return Language::TraditionalChinese;
+    case 0:
+    default:
+        return Language::English;
+    }
+}
+
+int MainWindow::indexFromLanguage(Language language) const
+{
+    switch (language) {
+    case Language::SimplifiedChinese:
+        return 1;
+    case Language::TraditionalChinese:
+        return 2;
+    case Language::English:
+    default:
+        return 0;
+    }
+}
+
+void MainWindow::setTestHint(const QString &key, const QList<QVariant> &args)
+{
+    m_testHintKey = key;
+    m_testHintArgs = args;
+    if (!m_testHintLabel) {
+        return;
+    }
+    QString resolved = translateText(key);
+    for (int i = 0; i < args.size(); ++i) {
+        resolved = resolved.arg(args.at(i).toString());
+    }
+    m_testHintLabel->setText(resolved);
 }

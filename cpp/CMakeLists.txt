@@ -117,6 +117,10 @@ if(QT_LIBS)
         AUTORCC ON
     )
 
+    if(WIN32)
+        set_target_properties(vna-spoofer-gui PROPERTIES WIN32_EXECUTABLE ON)
+    endif()
+
     target_include_directories(vna-spoofer-gui
         PRIVATE
             ${CMAKE_CURRENT_SOURCE_DIR}/src/gui

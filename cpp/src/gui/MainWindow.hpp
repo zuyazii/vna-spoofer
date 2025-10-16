@@ -11,6 +11,7 @@
 #include <QtCharts/QChartView>
 #include <QtCharts/QLineSeries>
 #include <QtCharts/QValueAxis>
+#include <QVariant>
 
 #include <cstdint>
 #include <atomic>
@@ -18,6 +19,7 @@
 #include <optional>
 #include <thread>
 #include <vector>
+#include <functional>
 
 class QLabel;
 class QCheckBox;
@@ -27,6 +29,7 @@ class QDoubleSpinBox;
 class QSpinBox;
 class QListWidget;
 class QListWidgetItem;
+class QComboBox;
 class QWidget;
 class QStackedWidget;
 class QButtonGroup;
@@ -51,8 +54,16 @@ private slots:
     void onDeviceSelectionChanged();
     void onDeviceActivated(QListWidgetItem *item);
     void onCalibrationActivated(QListWidgetItem *item);
+    void onLanguageSelectionChanged(int index);
 
 private:
+    enum class Language
+    {
+        English,
+        SimplifiedChinese,
+        TraditionalChinese
+    };
+
     void setupUi();
     QWidget *createCalibrationPanel();
     QWidget *createTestControlPanel();
@@ -77,12 +88,31 @@ private:
     void setChartBadgeState(QLabel *badge, const QString &text, const QString &state);
     void setAllChartBadges(const QString &text, const QString &state);
     void resetChartToBaseline(const QString &parameterId);
+    void updateThresholdEditorsEnabled();
+    void resetThresholdEditorsToDefault();
+    [[nodiscard]] QHash<QString, double> collectThresholds() const;
+    void initializeTranslations();
+    void applyTranslations();
+    void setLanguage(Language language);
+    [[nodiscard]] QString translateText(const QString &text) const;
+    [[nodiscard]] Language languageFromIndex(int index) const;
+    [[nodiscard]] int indexFromLanguage(Language language) const;
+    void registerTranslatable(const QString &key, std::function<void(const QString &)> setter);
+    void setTestHint(const QString &key, const QList<QVariant> &args = {});
+
+    struct TranslatableItem
+    {
+        QString key;
+        std::function<void(const QString &)> setter;
+    };
+
     struct ParameterExportInfo
     {
         QString name;
         double worstDb = -300.0;
         double failFrequencyHz = 0.0;
         bool pass = true;
+        double thresholdDb = -10.0;
     };
     void persistSweepOutputs(const std::vector<librevna::headless::VNAMeasurement> &results,
                              bool overallPass,
@@ -112,6 +142,17 @@ private:
     QPushButton *m_stopButton = nullptr;
     QPushButton *m_resetButton = nullptr;
     QList<QToolButton *> m_parameterButtons;
+    QHash<QString, QDoubleSpinBox *> m_thresholdEditors;
+    QComboBox *m_languageCombo = nullptr;
+    QList<TranslatableItem> m_translatableItems;
+    QString m_currentCalibrationStatusKey;
+    QString m_currentCalibrationStatusStyle;
+    QString m_currentDeviceStatusKey;
+    QString m_currentDeviceStatusStyle;
+    QString m_currentTestStateKey;
+    QString m_testHintKey;
+    QList<QVariant> m_testHintArgs;
+    QHash<QString, double> m_lastThresholds;
     QStackedWidget *m_contentStack = nullptr;
     QButtonGroup *m_viewToggleGroup = nullptr;
     QPushButton *m_chartsToggleButton = nullptr;
@@ -130,6 +171,7 @@ private:
         QValueAxis *axisPhase = nullptr;
         QCheckBox *magnitudeToggle = nullptr;
         QCheckBox *phaseToggle = nullptr;
+        QLineSeries *thresholdSeries = nullptr;
         double baseFrequencyMin = 0.0;
         double baseFrequencyMax = 1.0;
         double baseMagnitudeMin = -100.0;
@@ -143,6 +185,9 @@ private:
     QString m_connectedSerial;
     std::filesystem::path m_activeCalibrationPath;
     std::filesystem::path m_calibrationDirectory;
+    Language m_currentLanguage = Language::English;
+    QHash<QString, QString> m_translationZhHans;
+    QHash<QString, QString> m_translationZhHant;
 
     std::thread m_sweepThread;
     std::atomic<bool> m_cancelRequested{false};
