@@ -12,6 +12,9 @@
 #include <QtCharts/QLineSeries>
 #include <QtCharts/QValueAxis>
 #include <QVariant>
+#include <QBoxLayout>
+#include <QResizeEvent>
+#include <QShowEvent>
 
 #include <cstdint>
 #include <atomic>
@@ -34,6 +37,8 @@ class QWidget;
 class QStackedWidget;
 class QButtonGroup;
 class QString;
+class QResizeEvent;
+class QShowEvent;
 
 class MainWindow : public QMainWindow
 {
@@ -42,6 +47,11 @@ class MainWindow : public QMainWindow
 public:
     explicit MainWindow(QWidget *parent = nullptr);
     ~MainWindow() override;
+
+protected:
+    void resizeEvent(QResizeEvent *event) override;
+    void showEvent(QShowEvent *event) override;
+    bool eventFilter(QObject *watched, QEvent *event) override;
 
 private slots:
     void onLoadCalibration();
@@ -91,6 +101,10 @@ private:
     void updateThresholdEditorsEnabled();
     void resetThresholdEditorsToDefault();
     [[nodiscard]] QHash<QString, double> collectThresholds() const;
+    void updateResponsiveLayout(int availableWidth);
+    void adjustWindowForScreen();
+    void registerTouchInputWidget(QWidget *widget);
+    void showVirtualKeyboard();
     void initializeTranslations();
     void applyTranslations();
     void setLanguage(Language language);
@@ -158,6 +172,11 @@ private:
     QPushButton *m_chartsToggleButton = nullptr;
     QPushButton *m_statusToggleButton = nullptr;
     QSet<QString> m_activeParameters;
+    QBoxLayout *m_infoRowLayout = nullptr;
+    QWidget *m_calibrationPanel = nullptr;
+    QWidget *m_testControlPanel = nullptr;
+    bool m_initialShowHandled = false;
+    QSet<QWidget*> m_touchInputWidgets;
 
     struct ChartComponents
     {

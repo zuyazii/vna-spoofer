@@ -6,6 +6,8 @@
 #include <QCheckBox>
 #include <QtCharts/QAbstractAxis>
 #include <QCoreApplication>
+#include <QGuiApplication>
+#include <QScreen>
 #include <QDateTime>
 #include <QDir>
 #include <QDoubleSpinBox>
@@ -16,6 +18,9 @@
 #include <QLabel>
 #include <QListWidget>
 #include <QMainWindow>
+#include <QProcess>
+#include <QFile>
+#include <QEvent>
 #include <QMessageBox>
 #include <QMetaObject>
 #include <QPushButton>
@@ -44,6 +49,30 @@
 #include <QStringList>
 #include <QFileDialog>
 #include <QListWidgetItem>
+#include <QWindow>
+#include <QScroller>
+#ifdef Q_OS_WIN
+#include <windows.h>
+#include <shobjidl.h>
+#include <objbase.h>
+
+#ifndef __ITipInvocation_INTERFACE_DEFINED__
+struct ITipInvocation : public IUnknown
+{
+    virtual HRESULT STDMETHODCALLTYPE Toggle(HWND hwnd) = 0;
+    virtual HRESULT STDMETHODCALLTYPE Show(HWND hwnd) = 0;
+    virtual HRESULT STDMETHODCALLTYPE Hide() = 0;
+};
+#endif
+
+#ifndef CLSID_UIHostNoLaunch
+static const CLSID CLSID_UIHostNoLaunch = {0x4ce576fa, 0x83dc, 0x4f88, {0x95, 0x6f, 0x1f, 0x10, 0x47, 0x1f, 0xf2, 0x3c}};
+#endif
+
+#ifndef IID_ITipInvocation
+static const IID IID_ITipInvocation = {0x34745DDA, 0xB3C6, 0x4F16, {0xBE, 0x2C, 0xA9, 0x35, 0x21, 0x0D, 0x58, 0x8A}};
+#endif
+#endif
 
 #include <algorithm>
 #include <array>
@@ -437,7 +466,6 @@ void MainWindow::setupUi()
     registerTranslatable(QStringLiteral("S Parameter Test System"),
                          [this](const QString &text) { this->setWindowTitle(text); });
     setWindowTitle(translateText(QStringLiteral("S Parameter Test System")));
-    resize(1200, 800);
 
     setStyleSheet(QStringLiteral(R"(
         QMainWindow {
@@ -480,10 +508,10 @@ void MainWindow::setupUi()
         #MainCentral QPushButton {
             background: #181823;
             color: #ffffff;
-            border-radius: 12px;
-            min-height: 46px;
-            padding: 10px 24px;
-            font-size: 16px;
+            border-radius: 14px;
+            min-height: 60px;
+            padding: 14px 28px;
+            font-size: 18px;
             font-weight: 600;
         }
         #MainCentral QPushButton::icon {
@@ -532,10 +560,10 @@ void MainWindow::setupUi()
         #MainCentral QToolButton {
             background: #f4f5ff;
             border: 1px solid transparent;
-            border-radius: 14px;
-            padding: 6px 16px;
-            min-height: 36px;
-            font-size: 15px;
+            border-radius: 16px;
+            padding: 10px 20px;
+            min-height: 48px;
+            font-size: 16px;
             font-weight: 600;
         }
         #MainCentral QToolButton:checked {
@@ -604,24 +632,29 @@ void MainWindow::setupUi()
     auto *scrollArea = new QScrollArea(this);
     scrollArea->setFrameShape(QFrame::NoFrame);
     scrollArea->setWidgetResizable(true);
-    scrollArea->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    scrollArea->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+    scrollArea->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+    scrollArea->viewport()->setAttribute(Qt::WA_AcceptTouchEvents, true);
+    QScroller::grabGesture(scrollArea->viewport(), QScroller::TouchGesture);
 
     auto *central = new QWidget(scrollArea);
     central->setObjectName(QStringLiteral("MainCentral"));
     central->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
 
     auto *rootLayout = new QVBoxLayout(central);
-    rootLayout->setSpacing(28);
-    rootLayout->setContentsMargins(32, 28, 32, 32);
+    rootLayout->setSpacing(20);
+    rootLayout->setContentsMargins(16, 16, 16, 24);
 
     auto *titleLabel = new QLabel(translateText(QStringLiteral("S Parameter Test System")), central);
     titleLabel->setObjectName(QStringLiteral("TitleLabel"));
+    titleLabel->setAlignment(Qt::AlignHCenter);
     registerTranslatable(QStringLiteral("S Parameter Test System"), [titleLabel](const QString &text) {
         titleLabel->setText(text);
     });
 
     auto *subtitleLabel = new QLabel(translateText(QStringLiteral("Professional touchpad GUI for S parameter measurements and analysis")), central);
     subtitleLabel->setObjectName(QStringLiteral("SubtitleLabel"));
+    subtitleLabel->setAlignment(Qt::AlignHCenter);
     registerTranslatable(QStringLiteral("Professional touchpad GUI for S parameter measurements and analysis"),
                          [subtitleLabel](const QString &text) { subtitleLabel->setText(text); });
 
@@ -650,6 +683,10 @@ void MainWindow::setupUi()
     m_languageCombo->addItem(QStringLiteral("简体中文"));
     m_languageCombo->addItem(QStringLiteral("繁體中文"));
     m_languageCombo->setCurrentIndex(indexFromLanguage(m_currentLanguage));
+    m_languageCombo->setMinimumHeight(48);
+    QFont comboFont = m_languageCombo->font();
+    comboFont.setPointSizeF(comboFont.pointSizeF() + 1);
+    m_languageCombo->setFont(comboFont);
     connect(m_languageCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &MainWindow::onLanguageSelectionChanged);
     languageLayout->addWidget(m_languageCombo, 0, Qt::AlignRight);
 
@@ -660,12 +697,14 @@ void MainWindow::setupUi()
 
     rootLayout->addLayout(headerRow);
 
-    auto *infoRow = new QHBoxLayout;
-    infoRow->setSpacing(24);
-    infoRow->addWidget(createCalibrationPanel(), 1);
-    infoRow->addWidget(createTestControlPanel(), 1);
+    m_calibrationPanel = createCalibrationPanel();
+    m_testControlPanel = createTestControlPanel();
+    m_infoRowLayout = new QBoxLayout(QBoxLayout::LeftToRight);
+    m_infoRowLayout->setSpacing(16);
+    m_infoRowLayout->addWidget(m_calibrationPanel, 1);
+    m_infoRowLayout->addWidget(m_testControlPanel, 1);
 
-    rootLayout->addLayout(infoRow);
+    rootLayout->addLayout(m_infoRowLayout);
 
     rootLayout->addWidget(createViewTogglePanel(central), 1);
 
@@ -685,6 +724,7 @@ void MainWindow::setupUi()
     resetCharts();
     appendStatusMessage(translateText(QStringLiteral("S Parameter Test System initialized")));
     m_lastThresholds = defaultThresholds();
+    updateResponsiveLayout(central->width());
 }
 
 QWidget *MainWindow::createCalibrationPanel()
@@ -696,6 +736,17 @@ QWidget *MainWindow::createCalibrationPanel()
     auto *layout = new QVBoxLayout(frame);
     layout->setSpacing(16);
     layout->setContentsMargins(24, 24, 24, 24);
+
+    const int buttonHeight = 64;
+    auto enhanceButton = [&](QPushButton *button) {
+        if (!button) {
+            return;
+        }
+        button->setMinimumHeight(buttonHeight);
+        QFont f = button->font();
+        f.setPointSizeF(f.pointSizeF() + 2);
+        button->setFont(f);
+    };
 
     auto *headerLayout = new QHBoxLayout;
     headerLayout->setSpacing(12);
@@ -723,6 +774,7 @@ QWidget *MainWindow::createCalibrationPanel()
         btn->setText(text);
     });
     connect(m_scanDevicesButton, &QPushButton::clicked, this, &MainWindow::onScanDevices);
+    enhanceButton(m_scanDevicesButton);
 
     m_loadCalibrationButton = new QPushButton(translateText(QStringLiteral("Load External")), frame);
     m_loadCalibrationButton->setObjectName(QStringLiteral("SecondaryButton"));
@@ -730,6 +782,7 @@ QWidget *MainWindow::createCalibrationPanel()
         btn->setText(text);
     });
     connect(m_loadCalibrationButton, &QPushButton::clicked, this, &MainWindow::onLoadCalibration);
+    enhanceButton(m_loadCalibrationButton);
 
     primaryButtonRow->addWidget(m_scanDevicesButton, 1);
     primaryButtonRow->addWidget(m_loadCalibrationButton, 1);
@@ -759,6 +812,7 @@ QWidget *MainWindow::createCalibrationPanel()
         }
         connectToDevice(m_discoveredDevices[static_cast<std::size_t>(index)]);
     });
+    enhanceButton(m_connectDeviceButton);
 
     m_setupCalibrationButton = new QPushButton(translateText(QStringLiteral("Setup New")), frame);
     m_setupCalibrationButton->setObjectName(QStringLiteral("ActionButton"));
@@ -766,6 +820,7 @@ QWidget *MainWindow::createCalibrationPanel()
         btn->setText(text);
     });
     connect(m_setupCalibrationButton, &QPushButton::clicked, this, &MainWindow::onSetupCalibration);
+    enhanceButton(m_setupCalibrationButton);
 
     secondaryButtonRow->addWidget(m_connectDeviceButton, 1);
     secondaryButtonRow->addWidget(m_setupCalibrationButton, 1);
@@ -845,6 +900,28 @@ QWidget *MainWindow::createTestControlPanel()
     layout->setSpacing(18);
     layout->setContentsMargins(24, 24, 24, 24);
 
+    const int buttonHeight = 64;
+    const int spinHeight = 56;
+    auto enhanceButton = [&](QPushButton *button) {
+        if (!button) {
+            return;
+        }
+        button->setMinimumHeight(buttonHeight);
+        QFont f = button->font();
+        f.setPointSizeF(f.pointSizeF() + 2);
+        button->setFont(f);
+    };
+
+    auto enhanceToolButton = [&](QToolButton *button) {
+        if (!button) {
+            return;
+        }
+        button->setMinimumHeight(52);
+        QFont f = button->font();
+        f.setPointSizeF(f.pointSizeF() + 1);
+        button->setFont(f);
+    };
+
     auto *headerLayout = new QHBoxLayout;
     headerLayout->setSpacing(12);
 
@@ -883,6 +960,9 @@ QWidget *MainWindow::createTestControlPanel()
     m_startFrequencySpin->setRange(0.001, 40.0);
     m_startFrequencySpin->setValue(1.0);
     m_startFrequencySpin->setSingleStep(0.1);
+    m_startFrequencySpin->setMinimumHeight(spinHeight);
+    m_startFrequencySpin->setButtonSymbols(QAbstractSpinBox::PlusMinus);
+    registerTouchInputWidget(m_startFrequencySpin);
 
     m_stopFrequencySpin = new QDoubleSpinBox(frame);
     m_stopFrequencySpin->setSuffix(QStringLiteral(" GHz"));
@@ -890,11 +970,17 @@ QWidget *MainWindow::createTestControlPanel()
     m_stopFrequencySpin->setRange(0.001, 40.0);
     m_stopFrequencySpin->setValue(6.0);
     m_stopFrequencySpin->setSingleStep(0.1);
+    m_stopFrequencySpin->setMinimumHeight(spinHeight);
+    m_stopFrequencySpin->setButtonSymbols(QAbstractSpinBox::PlusMinus);
+    registerTouchInputWidget(m_stopFrequencySpin);
 
     m_pointsSpin = new QSpinBox(frame);
     m_pointsSpin->setRange(1, 2001);
     m_pointsSpin->setValue(201);
     m_pointsSpin->setSingleStep(10);
+    m_pointsSpin->setMinimumHeight(spinHeight);
+    m_pointsSpin->setButtonSymbols(QAbstractSpinBox::PlusMinus);
+    registerTouchInputWidget(m_pointsSpin);
 
     addSpinBoxRow(0, QStringLiteral("Start Frequency"), m_startFrequencySpin);
     addSpinBoxRow(1, QStringLiteral("Stop Frequency"), m_stopFrequencySpin);
@@ -923,6 +1009,7 @@ QWidget *MainWindow::createTestControlPanel()
         connect(button, &QToolButton::toggled, this, &MainWindow::onSParameterToggled);
         parameterRow->addWidget(button);
         m_parameterButtons.append(button);
+        enhanceToolButton(button);
     }
     parameterRow->addStretch();
 
@@ -954,6 +1041,9 @@ QWidget *MainWindow::createTestControlPanel()
         spin->setSingleStep(0.5);
         spin->setKeyboardTracking(false);
         spin->setValue(defaultThresholds().value(id, kDefaultThresholdDb));
+        spin->setMinimumHeight(spinHeight);
+        spin->setButtonSymbols(QAbstractSpinBox::PlusMinus);
+        registerTouchInputWidget(spin);
 
         m_thresholdEditors.insert(id, spin);
 
@@ -978,6 +1068,7 @@ QWidget *MainWindow::createTestControlPanel()
         btn->setText(text);
     });
     connect(m_startButton, &QPushButton::clicked, this, &MainWindow::onStartTest);
+    enhanceButton(m_startButton);
 
     m_stopButton = new QPushButton(translateText(QStringLiteral("Stop")), frame);
     m_stopButton->setObjectName(QStringLiteral("StopButton"));
@@ -988,6 +1079,7 @@ QWidget *MainWindow::createTestControlPanel()
         btn->setText(text);
     });
     connect(m_stopButton, &QPushButton::clicked, this, &MainWindow::onStopTest);
+    enhanceButton(m_stopButton);
 
     m_resetButton = new QPushButton(translateText(QStringLiteral("Reset")), frame);
     m_resetButton->setObjectName(QStringLiteral("SecondaryButton"));
@@ -997,6 +1089,7 @@ QWidget *MainWindow::createTestControlPanel()
         btn->setText(text);
     });
     connect(m_resetButton, &QPushButton::clicked, this, &MainWindow::onResetTest);
+    enhanceButton(m_resetButton);
 
     actionsRow->addWidget(m_startButton, 1);
     actionsRow->addWidget(m_stopButton, 1);
@@ -2346,27 +2439,173 @@ void MainWindow::updateChartsWithResults(const std::vector<librevna::headless::V
         }
     }
 
-        if (components.thresholdSeries) {
-            if (std::isfinite(thresholdDb) && components.axisFrequency) {
-                const double startX = components.axisFrequency->min();
-                const double endX = components.axisFrequency->max();
-                if (std::isfinite(startX) && std::isfinite(endX) && endX - startX > std::numeric_limits<double>::epsilon()) {
-                    QVector<QPointF> thresholdPoints;
-                    thresholdPoints.append(QPointF(startX, thresholdDb));
-                    thresholdPoints.append(QPointF(endX, thresholdDb));
-                    components.thresholdSeries->replace(thresholdPoints);
-                    const bool show = !components.magnitudeToggle || components.magnitudeToggle->isChecked();
-                    components.thresholdSeries->setVisible(show);
-                } else {
-                    components.thresholdSeries->clear();
-                    components.thresholdSeries->setVisible(false);
-                }
+    if (components.thresholdSeries) {
+        if (std::isfinite(thresholdDb) && components.axisFrequency) {
+            const double startX = components.axisFrequency->min();
+            const double endX = components.axisFrequency->max();
+            if (std::isfinite(startX) && std::isfinite(endX) && endX - startX > std::numeric_limits<double>::epsilon()) {
+                QVector<QPointF> thresholdPoints;
+                thresholdPoints.append(QPointF(startX, thresholdDb));
+                thresholdPoints.append(QPointF(endX, thresholdDb));
+                components.thresholdSeries->replace(thresholdPoints);
+                const bool show = !components.magnitudeToggle || components.magnitudeToggle->isChecked();
+                components.thresholdSeries->setVisible(show);
             } else {
                 components.thresholdSeries->clear();
                 components.thresholdSeries->setVisible(false);
             }
+        } else {
+            components.thresholdSeries->clear();
+            components.thresholdSeries->setVisible(false);
         }
     }
+}
+
+}
+
+void MainWindow::resizeEvent(QResizeEvent *event)
+{
+    QMainWindow::resizeEvent(event);
+    const int contentWidth = centralWidget() ? centralWidget()->width() : event->size().width();
+    updateResponsiveLayout(contentWidth);
+}
+
+void MainWindow::showEvent(QShowEvent *event)
+{
+    QMainWindow::showEvent(event);
+    if (m_initialShowHandled) {
+        return;
+    }
+    m_initialShowHandled = true;
+    adjustWindowForScreen();
+}
+
+void MainWindow::updateResponsiveLayout(int availableWidth)
+{
+    if (!m_infoRowLayout) {
+        return;
+    }
+
+    const bool stackVertically = availableWidth < 1360;
+    const auto desiredDirection = stackVertically ? QBoxLayout::TopToBottom : QBoxLayout::LeftToRight;
+    if (m_infoRowLayout->direction() != desiredDirection) {
+        m_infoRowLayout->setDirection(desiredDirection);
+    }
+
+    if (m_calibrationPanel) {
+        m_calibrationPanel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+    }
+    if (m_testControlPanel) {
+        m_testControlPanel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+    }
+
+    if (stackVertically) {
+        m_infoRowLayout->setSpacing(12);
+    } else {
+        m_infoRowLayout->setSpacing(16);
+    }
+}
+
+void MainWindow::adjustWindowForScreen()
+{
+    if (auto *screen = QGuiApplication::primaryScreen()) {
+        const QRect available = screen->availableGeometry();
+        setMinimumSize(QSize(800, 600));
+        if (available.width() <= 2560) {
+            QTimer::singleShot(0, this, [this]() {
+                this->showMaximized();
+            });
+        }
+        updateResponsiveLayout(centralWidget() ? centralWidget()->width() : available.width());
+    }
+}
+
+void MainWindow::registerTouchInputWidget(QWidget *widget)
+{
+    if (!widget) {
+        return;
+    }
+    widget->setProperty("touchInput", true);
+    widget->installEventFilter(this);
+    m_touchInputWidgets.insert(widget);
+}
+
+void MainWindow::showVirtualKeyboard()
+{
+#ifdef Q_OS_WIN
+    auto focusedWindowHandle = []() -> HWND {
+        if (auto *win = QGuiApplication::focusWindow()) {
+            return reinterpret_cast<HWND>(win->winId());
+        }
+        return GetForegroundWindow();
+    };
+
+    auto invokeViaCOM = [focusedWindowHandle]() -> bool {
+        ITipInvocation *tip = nullptr;
+        const HRESULT hrInit = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+        const bool needUninit = SUCCEEDED(hrInit);
+        HRESULT hr = CoCreateInstance(CLSID_UIHostNoLaunch,
+                                      nullptr,
+                                      CLSCTX_INPROC_HANDLER | CLSCTX_LOCAL_SERVER,
+                                      IID_ITipInvocation,
+                                      reinterpret_cast<void **>(&tip));
+        if (SUCCEEDED(hr) && tip) {
+            HWND hwnd = focusedWindowHandle();
+            tip->Show(hwnd);
+            tip->Release();
+            if (needUninit) {
+                CoUninitialize();
+            }
+            return true;
+        }
+        if (needUninit) {
+            CoUninitialize();
+        }
+        return false;
+    };
+
+    if (invokeViaCOM()) {
+        return;
+    }
+
+    auto bringTabTipToFront = []() -> bool {
+        if (HWND existing = FindWindow(L"IPTip_Main_Window", nullptr)) {
+            ShowWindow(existing, SW_SHOWNORMAL);
+            SetForegroundWindow(existing);
+            return true;
+        }
+        return false;
+    };
+
+    if (bringTabTipToFront()) {
+        return;
+    }
+
+    static const QStringList tabTipCandidates = {
+        QStringLiteral("C:/Program Files/Common Files/Microsoft Shared/ink/TabTip.exe"),
+        QStringLiteral("C:/Program Files (x86)/Common Files/Microsoft Shared/ink/TabTip.exe")
+    };
+    for (const auto &path : tabTipCandidates) {
+        if (QFile::exists(path)) {
+            QProcess::startDetached(path);
+            break;
+        }
+    }
+
+    QTimer::singleShot(700, this, [bringTabTipToFront]() { bringTabTipToFront(); });
+#endif
+}
+
+bool MainWindow::eventFilter(QObject *watched, QEvent *event)
+{
+    if (event->type() == QEvent::FocusIn) {
+        if (auto *widget = qobject_cast<QWidget *>(watched)) {
+            if (widget->property("touchInput").toBool()) {
+                showVirtualKeyboard();
+            }
+        }
+    }
+    return QMainWindow::eventFilter(watched, event);
 }
 
 void MainWindow::persistSweepOutputs(const std::vector<librevna::headless::VNAMeasurement> &results,
@@ -2639,6 +2878,8 @@ void MainWindow::initializeTranslations()
     add(QStringLiteral("Detected LibreVNA Devices"), QStringLiteral("检测到的 LibreVNA 设备"), QStringLiteral("偵測到的 LibreVNA 裝置"));
     add(QStringLiteral("Calibration Files"), QStringLiteral("校准文件"), QStringLiteral("校準檔案"));
     add(QStringLiteral("Not Loaded"), QStringLiteral("未加载"), QStringLiteral("未載入"));
+    add(QStringLiteral("Loaded"), QStringLiteral("已加载"), QStringLiteral("已載入"));
+    add(QStringLiteral("Active"), QStringLiteral("启用"), QStringLiteral("啟用"));
     add(QStringLiteral("No calibration files found"), QStringLiteral("未找到校准文件"), QStringLiteral("找不到校準檔案"));
     add(QStringLiteral("Calibration folder not found"), QStringLiteral("未找到校准文件夹"), QStringLiteral("找不到校準資料夾"));
     add(QStringLiteral("Load External"), QStringLiteral("导入外部文件"), QStringLiteral("匯入外部檔案"));
