@@ -30,6 +30,7 @@ target_include_directories(librevna_host_core
 target_sources(librevna_host_core
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src/device_discovery.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/calibration.cpp
 )
 
 if(LIBREVNA_HEADLESS_USE_REAL_DRIVER)

@@ -1,6 +1,9 @@
 #include "librevna_headless/host_core.hpp"
+#include "librevna_headless/calibration.hpp"
 
 #include <cmath>
+#include <exception>
+#include <filesystem>
 #include <random>
 #include <utility>
 
@@ -11,6 +14,7 @@ struct HostCore::Impl
 {
     bool connected = false;
     std::filesystem::path calibration_path;
+    CalibrationApplier calibrator;
     std::string last_error;
 
     [[nodiscard]] std::vector<VNAMeasurement> run_stub_sweep(const SweepConfiguration &config)
@@ -37,15 +41,27 @@ struct HostCore::Impl
                 return std::polar(mag, phase);
             };
 
-            result.emplace_back(
-                frequency,
-                std::map<std::string, std::complex<double>>{
-                    {"S11", make_point(-15.0)},
-                    {"S21", make_point(-3.0)},
-                    {"S12", make_point(-30.0)},
-                    {"S22", make_point(-12.0)}
+            std::map<std::string, std::complex<double>> parameters = {
+                {"S11", make_point(-15.0)},
+                {"S21", make_point(-3.0)},
+                {"S12", make_point(-30.0)},
+                {"S22", make_point(-12.0)}
+            };
+
+            VNAMeasurement measurement(frequency, std::move(parameters));
+            if(calibrator.has_calibration())
+            {
+                try
+                {
+                    calibrator.apply(measurement);
                 }
-            );
+                catch(const std::exception &ex)
+                {
+                    last_error = std::string("Calibration correction failed: ") + ex.what();
+                    return {};
+                }
+            }
+            result.push_back(std::move(measurement));
         }
 
         return result;
@@ -86,6 +102,13 @@ bool HostCore::load_calibration(const std::filesystem::path &path)
         return false;
     }
 
+    std::string error_message;
+    if(!impl->calibrator.load(path, &error_message))
+    {
+        impl->last_error = error_message.empty() ? "Failed to load calibration coefficients" : error_message;
+        return false;
+    }
+
     impl->calibration_path = path;
     return true;
 }
@@ -106,3 +129,5 @@ std::string HostCore::last_error_message() const
 }
 
 } // namespace librevna::headless
+
+

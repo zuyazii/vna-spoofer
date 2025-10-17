@@ -1,4 +1,5 @@
 #include "librevna_headless/host_core.hpp"
+#include "librevna_headless/calibration.hpp"
 #include "librevna_headless/device_ids.hpp"
 
 #include "Protocol.hpp"
@@ -9,6 +10,7 @@
 #include <libusb-1.0/libusb.h>
 
 #include <algorithm>
+#include <exception>
 #include <array>
 #include <chrono>
 #include <cmath>
@@ -60,6 +62,7 @@ struct HostCore::Impl
     bool connected = false;
 
     std::filesystem::path calibration_path;
+    CalibrationApplier calibrator;
     std::string last_error;
 
     Protocol::DeviceInfo device_info{};
@@ -215,6 +218,12 @@ struct HostCore::Impl
         if(!std::filesystem::exists(path))
         {
             last_error = "Calibration file not found";
+            return false;
+        }
+        std::string error_message;
+        if(!calibrator.load(path, &error_message))
+        {
+            last_error = error_message.empty() ? "Failed to load calibration coefficients" : error_message;
             return false;
         }
         calibration_path = path;
@@ -460,7 +469,22 @@ struct HostCore::Impl
         case Protocol::PacketType::VNADatapoint:
             if(packet.VNAdatapoint)
             {
-                measurements.push_back(convert_datapoint(*packet.VNAdatapoint, config, port_count));
+                auto measurement = convert_datapoint(*packet.VNAdatapoint, config, port_count);
+                if(calibrator.has_calibration())
+                {
+                    try
+                    {
+                        calibrator.apply(measurement);
+                    }
+                    catch(const std::exception &ex)
+                    {
+                        last_error = std::string("Calibration correction failed: ") + ex.what();
+                        delete packet.VNAdatapoint;
+                        packet.VNAdatapoint = nullptr;
+                        return false;
+                    }
+                }
+                measurements.push_back(std::move(measurement));
                 delete packet.VNAdatapoint;
                 packet.VNAdatapoint = nullptr;
             }
@@ -641,3 +665,5 @@ std::string HostCore::last_error_message() const
 }
 
 } // namespace librevna::headless
+
+
