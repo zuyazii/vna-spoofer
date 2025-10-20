@@ -1,0 +1,145 @@
+from __future__ import annotations
+
+from typing import Dict
+
+from PySide6.QtCore import QLocale, QSize, Qt, Signal
+from PySide6.QtGui import QColor, QIcon
+from PySide6.QtWidgets import (
+    QFrame,
+    QHBoxLayout,
+    QPushButton,
+    QSizePolicy,
+    QSplitter,
+    QStackedLayout,
+    QVBoxLayout,
+    QWidget,
+)
+
+from views.bottombar import BottomBar
+from views.sidebar import SidebarView
+from widgets.plot import PlotWidget
+
+
+class PlotContainer(QFrame):
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setProperty("variant", "card")
+        self.setContentsMargins(0, 0, 0, 0)
+
+        layout = QStackedLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setStackingMode(QStackedLayout.StackAll)
+
+        self.plot = PlotWidget(self)
+        layout.addWidget(self.plot)
+
+        overlay = QWidget(self)
+        overlay.setAttribute(Qt.WA_TransparentForMouseEvents, True)
+        overlay_layout = QVBoxLayout(overlay)
+        overlay_layout.setContentsMargins(16, 16, 16, 16)
+        overlay_layout.setSpacing(0)
+
+        top_bar = QHBoxLayout()
+        top_bar.setContentsMargins(0, 0, 0, 0)
+        top_bar.setSpacing(0)
+        top_bar.addStretch(1)
+
+        self.presets_button = QPushButton("Presets", overlay)
+        self.presets_button.setObjectName("PresetsButton")
+        self.presets_button.setFlat(False)
+        self.presets_button.setAttribute(Qt.WA_TransparentForMouseEvents, False)
+        self.presets_button.setIcon(QIcon("assets/icons/preset.svg"))
+        self.presets_button.setIconSize(QSize(18, 18))
+        top_bar.addWidget(self.presets_button)
+
+        overlay_layout.addLayout(top_bar)
+        overlay_layout.addStretch(1)
+
+        layout.addWidget(overlay)
+
+
+class MainView(QFrame):
+    languageChanged = Signal(str)
+    rangeChanged = Signal(float, float)
+    pointsChanged = Signal(int)
+    seriesVisibilityChanged = Signal(str, bool)
+    seriesColorChanged = Signal(str, QColor)
+    magnitudeToggled = Signal(bool)
+    phaseToggled = Signal(bool)
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._locale = QLocale(QLocale.English)
+        self._strings: Dict = {}
+
+        self._build_ui()
+        self._connect_signals()
+
+    def _build_ui(self) -> None:
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        self._splitter = QSplitter(Qt.Horizontal, self)
+        self._splitter.setChildrenCollapsible(False)
+        layout.addWidget(self._splitter)
+
+        self.sidebar = SidebarView(self)
+        self._splitter.addWidget(self.sidebar)
+
+        central = QFrame(self)
+        central_layout = QVBoxLayout(central)
+        central_layout.setContentsMargins(16, 16, 16, 16)
+        central_layout.setSpacing(16)
+
+        from PySide6.QtWidgets import QLabel
+
+        placeholder_plot = QLabel("plot placeholder", central)
+        placeholder_plot.setAlignment(Qt.AlignCenter)
+        central_layout.addWidget(placeholder_plot, 1)
+
+        self.plot_container = None  # type: ignore[assignment]
+
+        from PySide6.QtWidgets import QLabel
+
+        self.bottom_bar = None  # type: ignore[assignment]
+        central_layout.addWidget(QLabel("bottom bar placeholder", central), 0)
+
+        self._splitter.addWidget(central)
+        self._splitter.setSizes([268, 960])
+
+    def _connect_signals(self) -> None:
+        self.sidebar.rangeChanged.connect(self.rangeChanged.emit)
+        self.sidebar.pointsChanged.connect(self.pointsChanged.emit)
+
+    @property
+    def plot(self) -> PlotWidget:
+        raise AttributeError("Plot container disabled for diagnostics")
+
+    def apply_translations(self, bundle: Dict) -> None:
+        self._strings = bundle
+        self.sidebar.apply_translations(bundle)
+        if self.bottom_bar:
+            self.bottom_bar.apply_translations(bundle)
+
+        buttons = bundle.get("buttons", {})
+        presets_text = buttons.get("presets", "Presets")
+        if self.plot_container:
+            self.plot_container.presets_button.setText(presets_text)
+
+    def set_locale(self, locale: QLocale) -> None:
+        self._locale = locale
+        self.sidebar.set_locale(locale)
+        if self.bottom_bar:
+            self.bottom_bar.set_locale(locale)
+        # Plot disabled during diagnostics.
+
+    def set_language(self, language_code: str) -> None:
+        if self.bottom_bar:
+            self.bottom_bar.set_current_language(language_code)
+
+    def default_values(self) -> Dict[str, float]:
+        return self.sidebar.default_values()
+
+    def _handle_series_color_change(self, series_name: str, color) -> None:
+        self.seriesColorChanged.emit(series_name, color)

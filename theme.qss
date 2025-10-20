@@ -1,0 +1,216 @@
+/* Global canvas */
+QWidget {{
+    background: {color_bg_canvas};
+    color: {color_ink_primary};
+    font-family: {font_family};
+    font-size: {font_size_sm}pt;
+    line-height: {font_line_height};
+}}
+
+QFrame[variant="card"], QWidget[variant="card"] {{
+    background: {color_bg_card};
+    border: {border_width_hair}px solid {color_stroke_soft};
+    border-radius: {radius_md}px;
+}}
+
+QSplitter::handle {{
+    background: {color_stroke_soft};
+    width: {border_width_hair}px;
+}}
+
+/* Ghost buttons */
+QPushButton {{
+    background: {color_bg_card};
+    border: {border_width_hair}px solid {color_stroke_soft};
+    border-radius: {radius_md}px;
+    padding: 6px 12px;
+    min-height: 32px;
+    color: {color_ink_primary};
+}}
+
+QPushButton:hover {{
+    background: {color_state_hover};
+}}
+
+QPushButton:checked {{
+    color: {color_ink_inverse};
+    border: none;
+}}
+
+QPushButton:focus {{
+    border: {border_width_hair}px solid {color_focus};
+}}
+
+/* Icon-only buttons */
+QToolButton {{
+    background: transparent;
+    border: none;
+    padding: 8px;
+    min-height: 32px;
+}}
+
+QToolButton:hover {{
+    background: {color_state_hover};
+    border-radius: {radius_sm}px;
+}}
+
+QToolButton:focus {{
+    outline: none;
+    border: {border_width_hair}px solid {color_focus};
+    border-radius: {radius_sm}px;
+}}
+
+/* Combo boxes */
+QComboBox {{
+    background: {color_bg_card};
+    border: {border_width_hair}px solid {color_stroke_soft};
+    border-radius: {radius_sm}px;
+    padding: 6px 12px;
+    min-height: 32px;
+}}
+
+QComboBox:on {{
+    border-color: {color_focus};
+}}
+
+QComboBox QListView {{
+    border: {border_width_hair}px solid {color_stroke_soft};
+    background: {color_bg_card};
+    selection-background-color: {color_state_selection};
+    selection-color: {color_ink_primary};
+}}
+
+/* Spin boxes */
+QDoubleSpinBox, QSpinBox {{
+    background: {color_bg_card};
+    border: {border_width_hair}px solid {color_stroke_soft};
+    border-radius: {radius_sm}px;
+    padding: 6px 12px;
+    min-height: 32px;
+}}
+
+QDoubleSpinBox:focus, QSpinBox:focus {{
+    border-color: {color_focus};
+}}
+
+QAbstractSpinBox::up-button, QAbstractSpinBox::down-button {{
+    width: 0px;
+    height: 0px;
+    border: none;
+}}
+
+QAbstractSpinBox::up-arrow, QAbstractSpinBox::down-arrow {{
+    width: 0px;
+    height: 0px;
+}}
+
+/* List views */
+QListView {{
+    border: {border_width_hair}px solid {color_stroke_soft};
+    border-radius: {radius_md}px;
+    background: {color_bg_card};
+    padding: {space_2}px;
+}}
+
+QListView::item {{
+    height: 32px;
+    padding: 0 {space_2}px;
+    border-bottom: {border_width_hair}px solid {color_stroke_soft};
+}}
+
+QListView::item:last {{
+    border-bottom: none;
+}}
+
+QListView::item:selected {{
+    background: {color_state_selection};
+    border-radius: {radius_xs}px;
+    color: {color_ink_primary};
+}}
+
+/* Checkbox styling */
+QCheckBox {{
+    spacing: {space_2}px;
+}}
+
+QCheckBox::indicator {{
+    width: 16px;
+    height: 16px;
+    border-radius: {radius_xs}px;
+    background: {color_bg_card};
+    border: {border_width_hair}px solid {color_stroke_soft};
+}}
+
+QCheckBox::indicator:hover {{
+    background: {color_state_hover};
+}}
+
+QCheckBox::indicator:checked {{
+    border: {border_width_hair}px solid transparent;
+}}
+
+QCheckBox:focus {{
+    outline: none;
+}}
+
+/* Labels */
+QLabel[role="muted"] {{
+    color: {color_ink_muted};
+}}
+
+/* Divider lines */
+QFrame[type="divider"] {{
+    background: {color_stroke_soft};
+    max-height: {border_width_hair}px;
+    min-height: {border_width_hair}px;
+}}
+
+/* Bottom bar */
+QWidget[objectName="BottomBar"] {{
+    border-top: {border_width_hair}px solid {color_stroke_soft};
+    background: {color_bg_card};
+    padding: {space_3}px {space_4}px;
+}}
+
+/* Color chip */
+QPushButton[group="color-chip"] {{
+    border-radius: {radius_sm}px;
+    border: {border_width_hair}px solid {color_stroke_soft};
+    padding: 0;
+    min-width: 32px;
+    min-height: 32px;
+}}
+
+QWidget[role="popover"] {{
+    background: {color_bg_card};
+    border: {border_width_hair}px solid {color_stroke_soft};
+    border-radius: {radius_md}px;
+}}
+
+QScrollBar:vertical {{
+    background: {color_bg_card};
+    width: 12px;
+    margin: 6px 0;
+    border: none;
+}}
+
+QScrollBar::handle:vertical {{
+    background: {color_stroke_soft};
+    border-radius: {radius_sm}px;
+    min-height: 36px;
+}}
+
+QScrollBar::handle:vertical:hover {{
+    background: {color_state_hover};
+}}
+
+QScrollBar::add-line:vertical,
+QScrollBar::sub-line:vertical {{
+    height: 0;
+    background: none;
+}}
+
+QScrollBar::add-page:vertical,
+QScrollBar::sub-page:vertical {{
+    background: transparent;
+}}

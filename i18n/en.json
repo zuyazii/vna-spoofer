@@ -1,0 +1,58 @@
+{
+  "app": {
+    "title": "VNA Spoofer"
+  },
+  "sidebar": {
+    "section_vna": "VNA",
+    "section_calibration": "Calibration",
+    "frequency_range": "Frequency Range",
+    "start": "Start",
+    "end": "End",
+    "separator": "–",
+    "points": "Points",
+    "points_suffix": "Points",
+    "points_hint": "sample points",
+    "series_hint": "-10 dB tracked",
+    "unit_ghz": "GHz",
+    "list_vna": [
+      "Sweep Control",
+      "Trace Manager"
+    ],
+    "list_calibration": [
+      "SOLT Kit",
+      "TRL Kit",
+      "User Preset"
+    ],
+    "s_parameters": "S Parameters"
+  },
+  "buttons": {
+    "presets": "Presets",
+    "menu": "Menu"
+  },
+  "bottom_bar": {
+    "language": "Language",
+    "mode_label": "Plot Modes",
+    "magnitude": "Magnitude",
+    "phase": "Phase",
+    "visibility": "Visibility",
+    "axis_magnitude": "Magnitude (dB)",
+    "axis_phase": "Phase (deg)",
+    "axis_frequency": "Frequency (GHz)",
+    "languages": {
+      "en": "English",
+      "zh_Hant": "繁體中文",
+      "zh_Hans": "简体中文"
+    }
+  },
+  "color_picker": {
+    "title": "Series Color",
+    "hsl": "HSL",
+    "hex": "HEX"
+  },
+  "series": {
+    "s11": "S11",
+    "s12": "S12",
+    "s21": "S21",
+    "s22": "S22"
+  }
+}

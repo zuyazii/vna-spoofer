@@ -1,0 +1,58 @@
+{
+  "app": {
+    "title": "VNA 模擬器"
+  },
+  "sidebar": {
+    "section_vna": "網路分析儀",
+    "section_calibration": "校準",
+    "frequency_range": "頻率範圍",
+    "start": "起始",
+    "end": "終止",
+    "separator": "–",
+    "points": "點數",
+    "points_suffix": "點",
+    "points_hint": "取樣點數",
+    "series_hint": "-10 dB 追蹤",
+    "unit_ghz": "GHz",
+    "list_vna": [
+      "掃描控制",
+      "跡線管理"
+    ],
+    "list_calibration": [
+      "SOLT 套件",
+      "TRL 套件",
+      "自訂預設"
+    ],
+    "s_parameters": "S ??"
+  },
+  "buttons": {
+    "presets": "預設",
+    "menu": "選單"
+  },
+  "bottom_bar": {
+    "language": "語言",
+    "mode_label": "圖表模式",
+    "magnitude": "幅度",
+    "phase": "相位",
+    "visibility": "顯示",
+    "axis_magnitude": "幅度 (dB)",
+    "axis_phase": "相位 (度)",
+    "axis_frequency": "頻率 (GHz)",
+    "languages": {
+      "en": "English",
+      "zh_Hant": "繁體中文",
+      "zh_Hans": "簡體中文"
+    }
+  },
+  "color_picker": {
+    "title": "曲線顏色",
+    "hsl": "HSL",
+    "hex": "HEX"
+  },
+  "series": {
+    "s11": "S11",
+    "s12": "S12",
+    "s21": "S21",
+    "s22": "S22"
+  }
+}
