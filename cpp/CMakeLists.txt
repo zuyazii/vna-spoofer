@@ -105,12 +105,19 @@ elseif(NOT Qt6_FOUND)
 endif()
 
 if(QT_LIBS)
-    add_executable(vna-spoofer-gui
+    set(GUI_SOURCES
         src/gui/main.cpp
-        src/gui/MainWindow.cpp
-        src/gui/MainWindow.hpp
-        src/gui/gui_resources.qrc
+        src/gui/ui/theme/ThemeLoader.cpp
+        src/gui/ui/widgets/PlotView.cpp
+        src/gui/ui/widgets/ColorPopover.cpp
+        src/gui/ui/widgets/SeriesCheck.cpp
+        src/gui/ui/views/Sidebar.cpp
+        src/gui/ui/views/BottomPanel.cpp
+        src/gui/ui/views/MainView.cpp
+        src/gui/resources.qrc
     )
+
+    add_executable(vna-spoofer-gui ${GUI_SOURCES})
 
     set_target_properties(vna-spoofer-gui PROPERTIES
         AUTOMOC ON

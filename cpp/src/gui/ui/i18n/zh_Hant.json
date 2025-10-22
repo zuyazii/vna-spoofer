@@ -1,0 +1,23 @@
+{
+  "sidebar.vna": "網路分析儀",
+  "sidebar.calibration": "校準",
+  "sidebar.frequency": "頻率範圍",
+  "sidebar.points": "點數",
+  "sidebar.parameters": "S 參數",
+  "sidebar.thresholds": "閾值 (dB)",
+  "actions.start": "開始",
+  "actions.stop": "停止",
+  "actions.reset": "重設",
+  "panel.language": "語言",
+  "panel.magnitude": "幅度",
+  "panel.phase": "相位",
+  "panel.lang.en": "English",
+  "panel.lang.zh_Hant": "繁體中文",
+  "panel.lang.zh_Hans": "简体中文",
+  "panel.toggleSidebar": "顯示/隱藏側邊欄",
+  "panel.toggleBottom": "顯示/隱藏下方面板",
+  "plot.axis.frequency": "頻率 (GHz)",
+  "plot.axis.magnitude": "幅度 (dB)",
+  "plot.axis.phase": "相位 (deg)",
+  "plot.presets": "預設"
+}

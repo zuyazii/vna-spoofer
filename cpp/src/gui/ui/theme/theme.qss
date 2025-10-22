@@ -1,0 +1,197 @@
+/* Base typography and palette */
+* {
+    font-family: {{FontFamily}};
+    color: {{InkPrimary}};
+    selection-color: {{BG_Canvas}};
+    selection-background-color: {{InkPrimary}};
+    outline: none;
+}
+
+QWidget {
+    background-color: transparent;
+}
+
+QMainWindow,
+QWidget#AppRoot {
+    background-color: {{BG_Canvas}};
+}
+
+QFrame[type="card"],
+QWidget[type="card"] {
+    background-color: {{BG_Card}};
+    border: 1px solid {{StrokeSoft}};
+    border-radius: {{RadiusMD}};
+}
+
+QSplitter::handle {
+    background-color: {{StrokeSoft}};
+    width: 1px;
+}
+
+QSplitter::handle:horizontal {
+    height: 1px;
+}
+
+QSplitter::handle:vertical {
+    width: 1px;
+}
+
+QLabel[role="subtitle"] {
+    color: {{InkMuted}};
+}
+
+/* Inputs */
+QLineEdit,
+QSpinBox,
+QDoubleSpinBox,
+QComboBox {
+    background-color: {{BG_Card}};
+    border: 1px solid {{StrokeSoft}};
+    border-radius: {{RadiusSM}};
+    padding: 6px 12px;
+}
+
+QSpinBox::up-button,
+QSpinBox::down-button,
+QDoubleSpinBox::up-button,
+QDoubleSpinBox::down-button {
+    width: 18px;
+}
+
+QComboBox::drop-down {
+    width: 24px;
+    border-left: 1px solid {{StrokeSoft}};
+}
+
+QComboBox QAbstractItemView {
+    border: 1px solid {{StrokeSoft}};
+    background: {{BG_Card}};
+    selection-background-color: {{StrokeSoft}};
+    selection-color: {{InkPrimary}};
+}
+
+QAbstractItemView {
+    border: 1px solid {{StrokeSoft}};
+    background: {{BG_Card}};
+}
+
+/* Buttons */
+QPushButton,
+QToolButton {
+    background-color: {{BG_Card}};
+    border: 1px solid {{StrokeSoft}};
+    border-radius: {{RadiusSM}};
+    padding: 6px 12px;
+    color: {{InkPrimary}};
+}
+
+QToolButton {
+    padding: 4px 6px;
+}
+
+QPushButton[variant="ghost"],
+QToolButton[variant="ghost"] {
+    background-color: transparent;
+}
+
+QPushButton:hover,
+QToolButton:hover,
+QComboBox::drop-down:hover {
+    background-color: {{Hover}};
+}
+
+QPushButton:pressed,
+QToolButton:pressed {
+    background-color: {{InkMuted}};
+    border-color: {{InkMuted}};
+    color: {{BG_Canvas}};
+}
+
+QPushButton[role="param"] {
+    min-width: 80px;
+    min-height: 80px;
+    border-radius: {{RadiusMD}};
+    font-size: {{Font::LG}}pt;
+}
+
+QPushButton[role="param"]:checked {
+    color: {{BG_Canvas}};
+}
+
+QPushButton:checked {
+    background-color: {{InkPrimary}};
+    border-color: {{InkPrimary}};
+    color: {{BG_Canvas}};
+}
+
+QPushButton:checked:hover {
+    background-color: {{InkPrimary}};
+}
+
+QPushButton:disabled,
+QToolButton:disabled {
+    color: rgba(43, 43, 41, 0.4);
+    border-color: rgba(208, 201, 194, 0.4);
+}
+
+/* Focus */
+*:focus-visible {
+    border: 1px solid {{Focus}};
+}
+
+/* Checkboxes */
+QCheckBox {
+    spacing: 8px;
+}
+
+QCheckBox::indicator {
+    width: 18px;
+    height: 18px;
+    border: none;
+    background: transparent;
+    image: url(":/ui/theme/icons/checkbox_unchecked.svg");
+}
+
+QCheckBox::indicator:checked {
+    image: url(":/ui/theme/icons/checkbox_checked.svg");
+}
+
+QGroupBox {
+    border: 1px solid {{StrokeSoft}};
+    border-radius: {{RadiusMD}};
+    margin-top: 12px;
+}
+
+QGroupBox::title {
+    subcontrol-origin: margin;
+    subcontrol-position: top left;
+    padding: 0 4px;
+}
+
+/* Tooltips */
+QToolTip {
+    background-color: {{InkPrimary}};
+    color: {{BG_Canvas}};
+    border: none;
+    padding: 4px 8px;
+}
+
+QLabel[role="caption"] {
+    color: {{InkMuted}};
+    font-size: {{Font::XS}}pt;
+    text-transform: lowercase;
+}
+
+QListView {
+    background: {{BG_Card}};
+    border: none;
+}
+
+QListView::item {
+    padding: 6px 8px;
+}
+
+QListView::item:selected {
+    background: {{Hover}};
+    color: {{InkPrimary}};
+}
