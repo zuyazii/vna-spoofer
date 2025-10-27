@@ -6,6 +6,7 @@
 #include <QCheckBox>
 #include <QtCharts/QAbstractAxis>
 #include <QCoreApplication>
+#include <QColorDialog>
 #include <QGuiApplication>
 #include <QScreen>
 #include <QDateTime>
@@ -160,6 +161,24 @@ QIcon makeSeriesIcon(const QColor &color, Qt::PenStyle style)
     const QPointF startPoint(margin, pixmap.height() / 2.0);
     const QPointF endPoint(pixmap.width() - margin, pixmap.height() / 2.0);
     painter.drawLine(startPoint, endPoint);
+    painter.end();
+
+    return QIcon(pixmap);
+}
+
+QIcon makeColorSwatchIcon(const QColor &color)
+{
+    const QSize iconSize(28, 18);
+    QPixmap pixmap(iconSize);
+    pixmap.fill(Qt::transparent);
+
+    QPainter painter(&pixmap);
+    painter.setRenderHint(QPainter::Antialiasing);
+    painter.setBrush(color);
+    painter.setPen(Qt::NoPen);
+
+    const QRectF rect(3.0, 3.0, iconSize.width() - 6.0, iconSize.height() - 6.0);
+    painter.drawRoundedRect(rect, 5.0, 5.0);
     painter.end();
 
     return QIcon(pixmap);
@@ -1190,26 +1209,12 @@ QWidget *MainWindow::createChartsPanel()
 {
     auto *panel = new QWidget(this);
     panel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
-    auto *layout = new QGridLayout(panel);
+    auto *layout = new QVBoxLayout(panel);
     layout->setContentsMargins(8, 16, 8, 16);
-    layout->setHorizontalSpacing(18);
-    layout->setVerticalSpacing(18);
+    layout->setSpacing(18);
 
-    const QStringList ids = allParameterIds();
-
-    for (int index = 0; index < ids.size(); ++index) {
-        const QString &parameterId = ids.at(index);
-        const QString description = parameterDescriptions().value(parameterId, parameterId);
-        auto *card = createChartCard(parameterId, description);
-        int row = index / 2;
-        int column = index % 2;
-        layout->addWidget(card, row, column);
-    }
-
-    layout->setRowStretch(0, 1);
-    layout->setRowStretch(1, 1);
-    layout->setColumnStretch(0, 1);
-    layout->setColumnStretch(1, 1);
+    auto *card = createCombinedChartCard();
+    layout->addWidget(card, 1);
 
     return panel;
 }
@@ -1306,36 +1311,29 @@ QWidget *MainWindow::createStatusPanel()
     return panel;
 }
 
-QWidget *MainWindow::createChartCard(const QString &parameterId, const QString &description)
+QWidget *MainWindow::createCombinedChartCard()
 {
+    m_parameterSeries.clear();
+
     auto *frame = new QFrame(this);
     frame->setProperty("panel", true);
     frame->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
 
     auto *layout = new QVBoxLayout(frame);
     layout->setContentsMargins(20, 20, 20, 20);
-    layout->setSpacing(12);
+    layout->setSpacing(16);
 
     auto *headerRow = new QHBoxLayout;
     headerRow->setSpacing(12);
 
-    auto *title = new QLabel(parameterId, frame);
+    auto *title = new QLabel(translateText(QStringLiteral("S-Parameter Results")), frame);
     title->setProperty("role", QStringLiteral("cardTitle"));
-
-    auto *subtitle = new QLabel(translateText(description), frame);
-    subtitle->setProperty("role", QStringLiteral("cardSubtitle"));
-    registerTranslatable(description, [subtitle](const QString &text) {
-        subtitle->setText(text);
+    registerTranslatable(QStringLiteral("S-Parameter Results"), [title](const QString &text) {
+        title->setText(text);
     });
 
-    auto *badge = new QLabel(translateText(QStringLiteral("Inactive")), frame);
-    badge->setProperty("role", QStringLiteral("cardBadge"));
-    badge->setProperty("state", QStringLiteral("inactive"));
-
     headerRow->addWidget(title);
-    headerRow->addWidget(subtitle);
     headerRow->addStretch();
-    headerRow->addWidget(badge);
 
     layout->addLayout(headerRow);
 
@@ -1379,115 +1377,277 @@ QWidget *MainWindow::createChartCard(const QString &parameterId, const QString &
     axisPhase->setRange(-180.0, 180.0);
     chart->addAxis(axisPhase, Qt::AlignRight);
 
-    auto *magnitudeSeries = new QLineSeries(chart);
-    magnitudeSeries->setName(QStringLiteral("Magnitude (dB)"));
-    QPen magnitudePen(QColor(QStringLiteral("#4540ff")));
-    magnitudePen.setWidthF(2.0);
-    magnitudeSeries->setPen(magnitudePen);
-    chart->addSeries(magnitudeSeries);
-    magnitudeSeries->attachAxis(axisFrequency);
-    magnitudeSeries->attachAxis(axisMagnitude);
-
-    auto *phaseSeries = new QLineSeries(chart);
-    phaseSeries->setName(QStringLiteral("Phase (deg)"));
-    QPen phasePen(QColor(QStringLiteral("#1d8a43")));
-    phasePen.setWidthF(1.5);
-    phasePen.setStyle(Qt::DashLine);
-    phaseSeries->setPen(phasePen);
-    chart->addSeries(phaseSeries);
-    phaseSeries->attachAxis(axisFrequency);
-    phaseSeries->attachAxis(axisPhase);
-
-    auto *thresholdSeries = new QLineSeries(chart);
-    QPen thresholdPen(QColor(QStringLiteral("#d12b57")));
-    thresholdPen.setWidthF(1.5);
-    thresholdPen.setStyle(Qt::DotLine);
-    thresholdSeries->setPen(thresholdPen);
-    chart->addSeries(thresholdSeries);
-    thresholdSeries->attachAxis(axisFrequency);
-    thresholdSeries->attachAxis(axisMagnitude);
-    thresholdSeries->setVisible(false);
-
     auto *chartView = new InteractiveChartView(chart, chartArea);
     chartView->setRenderHint(QPainter::Antialiasing);
     chartView->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
-    chartView->setMinimumHeight(320);
+    chartView->setMinimumHeight(360);
     chartView->setFocusPolicy(Qt::StrongFocus);
     chartLayout->addWidget(chartView);
 
     layout->addWidget(chartArea, 1);
 
-    auto *legendRow = new QHBoxLayout;
-    legendRow->setSpacing(12);
+    auto *controlsFrame = new QFrame(frame);
+    auto *controlsLayout = new QGridLayout(controlsFrame);
+    controlsLayout->setContentsMargins(0, 0, 0, 0);
+    controlsLayout->setHorizontalSpacing(18);
+    controlsLayout->setVerticalSpacing(10);
 
-    auto *magnitudeToggle = new QCheckBox(translateText(QStringLiteral("Magnitude")), frame);
-    magnitudeToggle->setChecked(true);
-    magnitudeToggle->setProperty("role", QStringLiteral("cardSubtitle"));
-    magnitudeToggle->setIcon(makeSeriesIcon(QColor(QStringLiteral("#4540ff")), Qt::SolidLine));
-    magnitudeToggle->setIconSize(QSize(28, 12));
-    registerTranslatable(QStringLiteral("Magnitude"), [magnitudeToggle](const QString &text) {
-        magnitudeToggle->setText(text);
+    auto addHeaderLabel = [&](const QString &key, int column, Qt::Alignment alignment = Qt::AlignLeft) {
+        auto *label = new QLabel(translateText(key), controlsFrame);
+        label->setProperty("role", QStringLiteral("cardSubtitle"));
+        registerTranslatable(key, [label](const QString &text) {
+            label->setText(text);
+        });
+        controlsLayout->addWidget(label, 0, column, alignment);
+    };
+
+    addHeaderLabel(QStringLiteral("Parameter"), 0);
+    addHeaderLabel(QStringLiteral("Magnitude"), 1);
+    addHeaderLabel(QStringLiteral("Phase"), 2);
+    addHeaderLabel(QStringLiteral("Status"), 3);
+
+    struct DefaultColors
+    {
+        QColor magnitude;
+        QColor phase;
+    };
+
+    const QHash<QString, DefaultColors> colorMap = {
+        {QStringLiteral("S11"), {QColor(QStringLiteral("#4540ff")), QColor(QStringLiteral("#1d8a43"))}},
+        {QStringLiteral("S12"), {QColor(QStringLiteral("#f97316")), QColor(QStringLiteral("#0ea5e9"))}},
+        {QStringLiteral("S21"), {QColor(QStringLiteral("#d12b57")), QColor(QStringLiteral("#7c3aed"))}},
+        {QStringLiteral("S22"), {QColor(QStringLiteral("#059669")), QColor(QStringLiteral("#db2777"))}}};
+
+    const QStringList ids = allParameterIds();
+    for (int index = 0; index < ids.size(); ++index) {
+        const QString &parameterId = ids.at(index);
+        const QString description = parameterDescriptions().value(parameterId, parameterId);
+        const int row = index + 1;
+
+        auto colorEntry = colorMap.value(parameterId, DefaultColors{QColor(QStringLiteral("#4540ff")), QColor(QStringLiteral("#1d8a43"))});
+
+        auto *parameterWidget = new QWidget(controlsFrame);
+        auto *parameterLayout = new QVBoxLayout(parameterWidget);
+        parameterLayout->setContentsMargins(0, 0, 0, 0);
+        parameterLayout->setSpacing(2);
+
+        auto *parameterLabel = new QLabel(parameterId, parameterWidget);
+        parameterLabel->setProperty("role", QStringLiteral("cardTitle"));
+        parameterLayout->addWidget(parameterLabel);
+
+        auto *parameterDescription = new QLabel(translateText(description), parameterWidget);
+        parameterDescription->setProperty("role", QStringLiteral("cardSubtitle"));
+        parameterDescription->setWordWrap(true);
+        registerTranslatable(description, [parameterDescription](const QString &text) {
+            parameterDescription->setText(text);
+        });
+        parameterLayout->addWidget(parameterDescription);
+        controlsLayout->addWidget(parameterWidget, row, 0);
+
+        auto buildSeriesControls = [&](const QString &toggleKey,
+                                       const QColor &initialColor,
+                                       Qt::PenStyle style,
+                                       int column,
+                                       auto seriesFactory) -> std::pair<QCheckBox *, QToolButton *> {
+            auto *container = new QWidget(controlsFrame);
+            auto *containerLayout = new QHBoxLayout(container);
+            containerLayout->setContentsMargins(0, 0, 0, 0);
+            containerLayout->setSpacing(8);
+
+            auto *toggle = new QCheckBox(container);
+            toggle->setChecked(true);
+            toggle->setProperty("role", QStringLiteral("cardSubtitle"));
+            toggle->setIcon(makeSeriesIcon(initialColor, style));
+            toggle->setIconSize(QSize(32, 14));
+
+            if (!toggleKey.isEmpty()) {
+                toggle->setText(translateText(toggleKey));
+                registerTranslatable(toggleKey, [toggle](const QString &text) {
+                    toggle->setText(text);
+                });
+            }
+
+            auto *colorButton = new QToolButton(container);
+            colorButton->setIcon(makeColorSwatchIcon(initialColor));
+            colorButton->setIconSize(QSize(28, 18));
+            colorButton->setAutoRaise(true);
+            colorButton->setToolTip(translateText(QStringLiteral("Select color")));
+            registerTranslatable(QStringLiteral("Select color"), [colorButton](const QString &text) {
+                colorButton->setToolTip(text);
+            });
+
+            containerLayout->addWidget(toggle);
+            containerLayout->addWidget(colorButton);
+            containerLayout->addStretch();
+            controlsLayout->addWidget(container, row, column);
+
+            seriesFactory(toggle, colorButton);
+            return {toggle, colorButton};
+        };
+
+        ParameterSeriesControls parameterControls;
+
+        auto magnitudeSeries = new QLineSeries(chart);
+        magnitudeSeries->setName(QStringLiteral("%1 | Magnitude").arg(parameterId));
+        auto phaseSeries = new QLineSeries(chart);
+        phaseSeries->setName(QStringLiteral("%1 | Phase").arg(parameterId));
+
+        auto thresholdSeries = new QLineSeries(chart);
+        chart->addSeries(magnitudeSeries);
+        chart->addSeries(phaseSeries);
+        chart->addSeries(thresholdSeries);
+
+        auto setupMagnitude = [&](QCheckBox *toggle, QToolButton *button) {
+            QPen magnitudePen(colorEntry.magnitude);
+            magnitudePen.setWidthF(2.0);
+            magnitudeSeries->setPen(magnitudePen);
+            magnitudeSeries->attachAxis(axisFrequency);
+            magnitudeSeries->attachAxis(axisMagnitude);
+            magnitudeSeries->setVisible(true);
+
+            QPen thresholdPen(colorEntry.magnitude.lighter(130));
+            thresholdPen.setWidthF(1.5);
+            thresholdPen.setStyle(Qt::DotLine);
+            thresholdSeries->setPen(thresholdPen);
+            thresholdSeries->attachAxis(axisFrequency);
+            thresholdSeries->attachAxis(axisMagnitude);
+            thresholdSeries->setVisible(false);
+
+            QObject::connect(toggle, &QCheckBox::toggled, this, [this, parameterId](bool checked) {
+                auto it = m_parameterSeries.find(parameterId);
+                if (it == m_parameterSeries.end()) {
+                    return;
+                }
+                if (it->magnitudeSeries) {
+                    it->magnitudeSeries->setVisible(checked);
+                }
+                if (it->thresholdSeries) {
+                    const bool show = checked && it->thresholdSeries->count() > 0;
+                    it->thresholdSeries->setVisible(show);
+                }
+                updateAxisVisibility();
+            });
+
+            QObject::connect(button, &QToolButton::clicked, this, [this, parameterId]() {
+                auto it = m_parameterSeries.find(parameterId);
+                if (it == m_parameterSeries.end() || !it->magnitudeSeries) {
+                    return;
+                }
+                const QColor chosen = QColorDialog::getColor(it->magnitudeColor, this, translateText(QStringLiteral("Select magnitude color")));
+                if (!chosen.isValid()) {
+                    return;
+                }
+                it->magnitudeColor = chosen;
+                QPen pen(chosen);
+                pen.setWidthF(2.0);
+                it->magnitudeSeries->setPen(pen);
+                if (it->thresholdSeries) {
+                    QPen thresholdPen(chosen.lighter(130));
+                    thresholdPen.setWidthF(1.5);
+                    thresholdPen.setStyle(Qt::DotLine);
+                    it->thresholdSeries->setPen(thresholdPen);
+                }
+                if (it->magnitudeToggle) {
+                    it->magnitudeToggle->setIcon(makeSeriesIcon(chosen, Qt::SolidLine));
+                }
+                if (it->magnitudeColorButton) {
+                    it->magnitudeColorButton->setIcon(makeColorSwatchIcon(chosen));
+                }
+            });
+        };
+
+        auto setupPhase = [&](QCheckBox *toggle, QToolButton *button) {
+            QPen phasePen(colorEntry.phase);
+            phasePen.setWidthF(1.5);
+            phasePen.setStyle(Qt::DashLine);
+            phaseSeries->setPen(phasePen);
+            phaseSeries->attachAxis(axisFrequency);
+            phaseSeries->attachAxis(axisPhase);
+            phaseSeries->setVisible(true);
+
+            QObject::connect(toggle, &QCheckBox::toggled, this, [this, parameterId](bool checked) {
+                auto it = m_parameterSeries.find(parameterId);
+                if (it == m_parameterSeries.end()) {
+                    return;
+                }
+                if (it->phaseSeries) {
+                    it->phaseSeries->setVisible(checked);
+                }
+                updateAxisVisibility();
+            });
+
+            QObject::connect(button, &QToolButton::clicked, this, [this, parameterId]() {
+                auto it = m_parameterSeries.find(parameterId);
+                if (it == m_parameterSeries.end() || !it->phaseSeries) {
+                    return;
+                }
+                const QColor chosen = QColorDialog::getColor(it->phaseColor, this, translateText(QStringLiteral("Select phase color")));
+                if (!chosen.isValid()) {
+                    return;
+                }
+                it->phaseColor = chosen;
+                QPen pen(chosen);
+                pen.setWidthF(1.5);
+                pen.setStyle(Qt::DashLine);
+                it->phaseSeries->setPen(pen);
+                if (it->phaseToggle) {
+                    it->phaseToggle->setIcon(makeSeriesIcon(chosen, Qt::DashLine));
+                }
+                if (it->phaseColorButton) {
+                    it->phaseColorButton->setIcon(makeColorSwatchIcon(chosen));
+                }
+            });
+        };
+
+        buildSeriesControls(QStringLiteral("Show"), colorEntry.magnitude, Qt::SolidLine, 1, [&](QCheckBox *toggle, QToolButton *button) {
+            parameterControls.magnitudeToggle = toggle;
+            parameterControls.magnitudeColorButton = button;
+            setupMagnitude(toggle, button);
+        });
+
+        buildSeriesControls(QStringLiteral("Show"), colorEntry.phase, Qt::DashLine, 2, [&](QCheckBox *toggle, QToolButton *button) {
+            parameterControls.phaseToggle = toggle;
+            parameterControls.phaseColorButton = button;
+            setupPhase(toggle, button);
+        });
+
+        auto *badge = new QLabel(translateText(QStringLiteral("Inactive")), controlsFrame);
+        badge->setProperty("role", QStringLiteral("cardBadge"));
+        badge->setProperty("state", QStringLiteral("inactive"));
+        registerTranslatable(QStringLiteral("Inactive"), [badge](const QString &text) {
+            badge->setText(text);
+        });
+        controlsLayout->addWidget(badge, row, 3);
+
+        parameterControls.badge = badge;
+        parameterControls.magnitudeSeries = magnitudeSeries;
+        parameterControls.phaseSeries = phaseSeries;
+        parameterControls.thresholdSeries = thresholdSeries;
+        parameterControls.magnitudeColor = colorEntry.magnitude;
+        parameterControls.phaseColor = colorEntry.phase;
+
+        m_parameterSeries.insert(parameterId, parameterControls);
+    }
+
+    layout->addWidget(controlsFrame);
+
+    m_chartComponents.chart = chart;
+    m_chartComponents.view = chartView;
+    m_chartComponents.axisFrequency = axisFrequency;
+    m_chartComponents.axisMagnitude = axisMagnitude;
+    m_chartComponents.axisPhase = axisPhase;
+    m_chartComponents.baseFrequencyMin = 0.0;
+    m_chartComponents.baseFrequencyMax = 1.0;
+    m_chartComponents.baseMagnitudeMin = -100.0;
+    m_chartComponents.baseMagnitudeMax = 10.0;
+    m_chartComponents.basePhaseMin = -180.0;
+    m_chartComponents.basePhaseMax = 180.0;
+
+    chartView->setResetCallback([this]() {
+        resetChartToBaseline();
     });
 
-    auto *phaseToggle = new QCheckBox(translateText(QStringLiteral("Phase")), frame);
-    phaseToggle->setChecked(true);
-    phaseToggle->setProperty("role", QStringLiteral("cardSubtitle"));
-    phaseToggle->setIcon(makeSeriesIcon(QColor(QStringLiteral("#1d8a43")), Qt::DashLine));
-    phaseToggle->setIconSize(QSize(28, 12));
-    registerTranslatable(QStringLiteral("Phase"), [phaseToggle](const QString &text) {
-        phaseToggle->setText(text);
-    });
-
-    legendRow->addWidget(magnitudeToggle);
-    legendRow->addWidget(phaseToggle);
-    legendRow->addStretch();
-
-    layout->addLayout(legendRow);
-
-    QObject::connect(magnitudeToggle, &QCheckBox::toggled, this, [magnitudeSeries, axisMagnitude, thresholdSeries](bool checked) {
-        if (magnitudeSeries) {
-            magnitudeSeries->setVisible(checked);
-        }
-        if (axisMagnitude) {
-            axisMagnitude->setVisible(checked);
-        }
-        if (thresholdSeries) {
-            thresholdSeries->setVisible(checked && thresholdSeries->count() > 0);
-        }
-    });
-
-    QObject::connect(phaseToggle, &QCheckBox::toggled, this, [phaseSeries, axisPhase](bool checked) {
-        if (phaseSeries) {
-            phaseSeries->setVisible(checked);
-        }
-        if (axisPhase) {
-            axisPhase->setVisible(checked);
-        }
-    });
-
-    ChartComponents components;
-    components.badge = badge;
-    components.chart = chart;
-    components.view = chartView;
-    components.magnitudeSeries = magnitudeSeries;
-    components.phaseSeries = phaseSeries;
-    components.axisFrequency = axisFrequency;
-    components.axisMagnitude = axisMagnitude;
-    components.axisPhase = axisPhase;
-    components.baseFrequencyMin = 0.0;
-    components.baseFrequencyMax = 1.0;
-    components.baseMagnitudeMin = -100.0;
-    components.baseMagnitudeMax = 10.0;
-    components.basePhaseMin = -180.0;
-    components.basePhaseMax = 180.0;
-    components.magnitudeToggle = magnitudeToggle;
-    components.phaseToggle = phaseToggle;
-    components.thresholdSeries = thresholdSeries;
-
-    m_chartComponents.insert(parameterId, components);
-    chartView->setResetCallback([this, parameterId]() {
-        resetChartToBaseline(parameterId);
-    });
+    updateAxisVisibility();
 
     return frame;
 }
@@ -2114,7 +2274,7 @@ void MainWindow::onStartTest()
                     }
                     const QString badgeText = parameter.pass ? QStringLiteral("PASS") : QStringLiteral("FAIL");
                     const QString badgeState = parameter.pass ? QStringLiteral("pass") : QStringLiteral("fail");
-                    if (auto it = m_chartComponents.find(parameterId); it != m_chartComponents.end()) {
+                    if (auto it = m_parameterSeries.find(parameterId); it != m_parameterSeries.end()) {
                         setChartBadgeState(it.value().badge, badgeText, badgeState);
                     }
                 }
@@ -2216,30 +2376,44 @@ void MainWindow::prepareChartsForSweep()
     const double lower = std::min(startGHz, stopGHz);
     const double upper = (stopGHz > startGHz) ? stopGHz : (lower + 1.0);
 
-    for (auto it = m_chartComponents.begin(); it != m_chartComponents.end(); ++it) {
+    m_chartComponents.baseFrequencyMin = lower;
+    m_chartComponents.baseFrequencyMax = upper;
+    m_chartComponents.baseMagnitudeMin = -100.0;
+    m_chartComponents.baseMagnitudeMax = 10.0;
+    m_chartComponents.basePhaseMin = -180.0;
+    m_chartComponents.basePhaseMax = 180.0;
+
+    if (m_chartComponents.axisFrequency) {
+        m_chartComponents.axisFrequency->setRange(lower, upper);
+    }
+    if (m_chartComponents.axisMagnitude) {
+        m_chartComponents.axisMagnitude->setRange(-100.0, 10.0);
+    }
+    if (m_chartComponents.axisPhase) {
+        m_chartComponents.axisPhase->setRange(-180.0, 180.0);
+    }
+
+    for (auto it = m_parameterSeries.begin(); it != m_parameterSeries.end(); ++it) {
         const QString parameterId = it.key();
         const bool isActive = m_activeParameters.contains(parameterId);
-        auto &components = it.value();
-        if (components.magnitudeSeries) {
-            components.magnitudeSeries->clear();
+        auto &controls = it.value();
+        if (controls.magnitudeSeries) {
+            controls.magnitudeSeries->clear();
         }
-        if (components.phaseSeries) {
-            components.phaseSeries->clear();
+        if (controls.phaseSeries) {
+            controls.phaseSeries->clear();
         }
-        components.baseFrequencyMin = lower;
-        components.baseFrequencyMax = upper;
-        components.baseMagnitudeMin = -100.0;
-        components.baseMagnitudeMax = 10.0;
-        components.basePhaseMin = -180.0;
-        components.basePhaseMax = 180.0;
-        resetChartToBaseline(parameterId);
+        if (controls.thresholdSeries) {
+            controls.thresholdSeries->clear();
+            controls.thresholdSeries->setVisible(false);
+        }
 
-        if (isActive) {
-            setChartBadgeState(components.badge, QStringLiteral("Pending"), QStringLiteral("pending"));
-        } else {
-            setChartBadgeState(components.badge, QStringLiteral("Inactive"), QStringLiteral("inactive"));
-        }
+        const QString badgeText = isActive ? QStringLiteral("Pending") : QStringLiteral("Inactive");
+        const QString badgeState = isActive ? QStringLiteral("pending") : QStringLiteral("inactive");
+        setChartBadgeState(controls.badge, badgeText, badgeState);
     }
+
+    resetChartToBaseline();
 }
 
 
@@ -2250,24 +2424,38 @@ void MainWindow::resetCharts()
     const double lower = std::min(startGHz, stopGHz);
     const double upper = (stopGHz > startGHz) ? stopGHz : (lower + 1.0);
 
-    for (auto it = m_chartComponents.begin(); it != m_chartComponents.end(); ++it) {
-        const QString parameterId = it.key();
-        auto &components = it.value();
-        if (components.magnitudeSeries) {
-            components.magnitudeSeries->clear();
-        }
-        if (components.phaseSeries) {
-            components.phaseSeries->clear();
-        }
-        components.baseFrequencyMin = lower;
-        components.baseFrequencyMax = upper;
-        components.baseMagnitudeMin = -100.0;
-        components.baseMagnitudeMax = 10.0;
-        components.basePhaseMin = -180.0;
-        components.basePhaseMax = 180.0;
-        resetChartToBaseline(parameterId);
-        setChartBadgeState(components.badge, QStringLiteral("Inactive"), QStringLiteral("inactive"));
+    m_chartComponents.baseFrequencyMin = lower;
+    m_chartComponents.baseFrequencyMax = upper;
+    m_chartComponents.baseMagnitudeMin = -100.0;
+    m_chartComponents.baseMagnitudeMax = 10.0;
+    m_chartComponents.basePhaseMin = -180.0;
+    m_chartComponents.basePhaseMax = 180.0;
+
+    if (m_chartComponents.axisFrequency) {
+        m_chartComponents.axisFrequency->setRange(lower, upper);
     }
+    if (m_chartComponents.axisMagnitude) {
+        m_chartComponents.axisMagnitude->setRange(-100.0, 10.0);
+    }
+    if (m_chartComponents.axisPhase) {
+        m_chartComponents.axisPhase->setRange(-180.0, 180.0);
+    }
+
+    for (auto it = m_parameterSeries.begin(); it != m_parameterSeries.end(); ++it) {
+        auto &controls = it.value();
+        if (controls.magnitudeSeries) {
+            controls.magnitudeSeries->clear();
+        }
+        if (controls.phaseSeries) {
+            controls.phaseSeries->clear();
+        }
+        if (controls.thresholdSeries) {
+            controls.thresholdSeries->clear();
+            controls.thresholdSeries->setVisible(false);
+        }
+        setChartBadgeState(controls.badge, QStringLiteral("Inactive"), QStringLiteral("inactive"));
+    }
+    resetChartToBaseline();
     m_latestMeasurements.clear();
 }
 
@@ -2299,7 +2487,7 @@ void MainWindow::updateChartsWithResults(const std::vector<librevna::headless::V
 
     std::vector<std::pair<QString, std::string>> trackedParameters;
     trackedParameters.reserve(m_activeParameters.size());
-    for (auto it = m_chartComponents.cbegin(); it != m_chartComponents.cend(); ++it) {
+    for (auto it = m_parameterSeries.cbegin(); it != m_parameterSeries.cend(); ++it) {
         if (!m_activeParameters.contains(it.key())) {
             continue;
         }
@@ -2357,7 +2545,12 @@ void MainWindow::updateChartsWithResults(const std::vector<librevna::headless::V
         frequencyMax += span;
     }
 
-    for (auto it = m_chartComponents.begin(); it != m_chartComponents.end(); ++it) {
+    double overallMagnitudeMin = std::numeric_limits<double>::max();
+    double overallMagnitudeMax = std::numeric_limits<double>::lowest();
+    double overallPhaseMin = std::numeric_limits<double>::max();
+    double overallPhaseMax = std::numeric_limits<double>::lowest();
+
+    for (auto it = m_parameterSeries.begin(); it != m_parameterSeries.end(); ++it) {
         const QString &parameterId = it.key();
         auto &components = it.value();
         const bool isActive = m_activeParameters.contains(parameterId);
@@ -2373,80 +2566,59 @@ void MainWindow::updateChartsWithResults(const std::vector<librevna::headless::V
                 components.thresholdSeries->clear();
                 components.thresholdSeries->setVisible(false);
             }
-            resetChartToBaseline(parameterId);
             setChartBadgeState(components.badge, QStringLiteral("Inactive"), QStringLiteral("inactive"));
             continue;
         }
 
-    const auto magnitudePoints = magnitudeData.value(parameterId);
-    const auto phasePoints = phaseData.value(parameterId);
-    const double thresholdDb = m_lastThresholds.value(parameterId, defaultThresholds().value(parameterId, kDefaultThresholdDb));
+        const auto magnitudePoints = magnitudeData.value(parameterId);
+        const auto phasePoints = phaseData.value(parameterId);
+        const double thresholdDb = m_lastThresholds.value(parameterId, defaultThresholds().value(parameterId, kDefaultThresholdDb));
 
-    if (components.magnitudeSeries) {
-        components.magnitudeSeries->replace(magnitudePoints);
-    }
-    if (components.phaseSeries) {
-        components.phaseSeries->replace(phasePoints);
-    }
+        if (components.magnitudeSeries) {
+            components.magnitudeSeries->replace(magnitudePoints);
+        }
+        if (components.phaseSeries) {
+            components.phaseSeries->replace(phasePoints);
+        }
 
-    if (components.axisFrequency && minFrequency <= maxFrequency) {
-        components.axisFrequency->setRange(frequencyMin, frequencyMax);
-        components.baseFrequencyMin = frequencyMin;
-        components.baseFrequencyMax = frequencyMax;
-    }
-
-    if (components.axisMagnitude) {
-        const auto rangeEntry = magnitudeRanges.value(parameterId);
-        double rangeMin = rangeEntry.min;
-        double rangeMax = rangeEntry.max;
+        auto magnitudeRange = magnitudeRanges.value(parameterId);
+        double magnitudeMin = magnitudeRange.min;
+        double magnitudeMax = magnitudeRange.max;
         if (std::isfinite(thresholdDb)) {
-            rangeMin = std::min(rangeMin, thresholdDb);
-            rangeMax = std::max(rangeMax, thresholdDb);
+            magnitudeMin = std::min(magnitudeMin, thresholdDb - 5.0);
+            magnitudeMax = std::max(magnitudeMax, thresholdDb + 5.0);
         }
-        if (!magnitudePoints.isEmpty() && rangeEntry.min <= rangeEntry.max) {
-            const double padding = 3.0;
-            const double minValue = rangeMin - padding;
-            const double maxValue = rangeMax + padding;
-            components.axisMagnitude->setRange(minValue, maxValue);
-            components.baseMagnitudeMin = minValue;
-            components.baseMagnitudeMax = maxValue;
-        } else {
-            double minValue = -100.0;
-            double maxValue = 10.0;
-            if (std::isfinite(thresholdDb)) {
-                minValue = std::min(minValue, thresholdDb - 3.0);
-                maxValue = std::max(maxValue, thresholdDb + 3.0);
-            }
-            components.axisMagnitude->setRange(minValue, maxValue);
-            components.baseMagnitudeMin = minValue;
-            components.baseMagnitudeMax = maxValue;
-        }
-    }
 
-    if (components.axisPhase) {
-        const auto range = phaseRanges.value(parameterId);
-        if (!phasePoints.isEmpty() && range.min <= range.max) {
+        if (!magnitudePoints.isEmpty() && magnitudeMin <= magnitudeMax) {
+            const double span = std::max(5.0, (magnitudeMax - magnitudeMin) * 0.1);
+            magnitudeMin -= span;
+            magnitudeMax += span;
+        } else {
+            magnitudeMin = -100.0;
+            magnitudeMax = 10.0;
+        }
+        overallMagnitudeMin = std::min(overallMagnitudeMin, magnitudeMin);
+        overallMagnitudeMax = std::max(overallMagnitudeMax, magnitudeMax);
+
+        auto phaseRange = phaseRanges.value(parameterId);
+        double phaseMin = phaseRange.min;
+        double phaseMax = phaseRange.max;
+        if (!phasePoints.isEmpty() && phaseMin <= phaseMax) {
             const double padding = 10.0;
-            const double minValue = range.min - padding;
-            const double maxValue = range.max + padding;
-            components.axisPhase->setRange(minValue, maxValue);
-            components.basePhaseMin = minValue;
-            components.basePhaseMax = maxValue;
+            phaseMin -= padding;
+            phaseMax += padding;
         } else {
-            components.axisPhase->setRange(-180.0, 180.0);
-            components.basePhaseMin = -180.0;
-            components.basePhaseMax = 180.0;
+            phaseMin = -180.0;
+            phaseMax = 180.0;
         }
-    }
+        overallPhaseMin = std::min(overallPhaseMin, phaseMin);
+        overallPhaseMax = std::max(overallPhaseMax, phaseMax);
 
-    if (components.thresholdSeries) {
-        if (std::isfinite(thresholdDb) && components.axisFrequency) {
-            const double startX = components.axisFrequency->min();
-            const double endX = components.axisFrequency->max();
-            if (std::isfinite(startX) && std::isfinite(endX) && endX - startX > std::numeric_limits<double>::epsilon()) {
+        if (components.thresholdSeries) {
+            if (std::isfinite(thresholdDb) && (frequencyMax - frequencyMin) > std::numeric_limits<double>::epsilon()) {
                 QVector<QPointF> thresholdPoints;
-                thresholdPoints.append(QPointF(startX, thresholdDb));
-                thresholdPoints.append(QPointF(endX, thresholdDb));
+                thresholdPoints.append(QPointF(frequencyMin, thresholdDb));
+                thresholdPoints.append(QPointF(frequencyMax, thresholdDb));
                 components.thresholdSeries->replace(thresholdPoints);
                 const bool show = !components.magnitudeToggle || components.magnitudeToggle->isChecked();
                 components.thresholdSeries->setVisible(show);
@@ -2454,13 +2626,36 @@ void MainWindow::updateChartsWithResults(const std::vector<librevna::headless::V
                 components.thresholdSeries->clear();
                 components.thresholdSeries->setVisible(false);
             }
-        } else {
-            components.thresholdSeries->clear();
-            components.thresholdSeries->setVisible(false);
         }
     }
-}
 
+    if (!std::isfinite(overallMagnitudeMin) || !std::isfinite(overallMagnitudeMax) || overallMagnitudeMin > overallMagnitudeMax) {
+        overallMagnitudeMin = -100.0;
+        overallMagnitudeMax = 10.0;
+    }
+    if (!std::isfinite(overallPhaseMin) || !std::isfinite(overallPhaseMax) || overallPhaseMin > overallPhaseMax) {
+        overallPhaseMin = -180.0;
+        overallPhaseMax = 180.0;
+    }
+
+    if (m_chartComponents.axisFrequency) {
+        m_chartComponents.axisFrequency->setRange(frequencyMin, frequencyMax);
+    }
+    if (m_chartComponents.axisMagnitude) {
+        m_chartComponents.axisMagnitude->setRange(overallMagnitudeMin, overallMagnitudeMax);
+    }
+    if (m_chartComponents.axisPhase) {
+        m_chartComponents.axisPhase->setRange(overallPhaseMin, overallPhaseMax);
+    }
+
+    m_chartComponents.baseFrequencyMin = frequencyMin;
+    m_chartComponents.baseFrequencyMax = frequencyMax;
+    m_chartComponents.baseMagnitudeMin = overallMagnitudeMin;
+    m_chartComponents.baseMagnitudeMax = overallMagnitudeMax;
+    m_chartComponents.basePhaseMin = overallPhaseMin;
+    m_chartComponents.basePhaseMax = overallPhaseMax;
+
+    updateAxisVisibility();
 }
 
 void MainWindow::resizeEvent(QResizeEvent *event)
@@ -2777,7 +2972,7 @@ void MainWindow::setChartBadgeState(QLabel *badge, const QString &text, const QS
 void MainWindow::setAllChartBadges(const QString &text, const QString &state)
 {
     const bool applyToAll = (state == QStringLiteral("inactive") && text == QStringLiteral("Inactive"));
-    for (auto it = m_chartComponents.begin(); it != m_chartComponents.end(); ++it) {
+    for (auto it = m_parameterSeries.begin(); it != m_parameterSeries.end(); ++it) {
         if (!applyToAll && !m_activeParameters.contains(it.key())) {
             continue;
         }
@@ -2785,29 +2980,52 @@ void MainWindow::setAllChartBadges(const QString &text, const QString &state)
     }
 }
 
-void MainWindow::resetChartToBaseline(const QString &parameterId)
+void MainWindow::resetChartToBaseline()
 {
-    auto it = m_chartComponents.find(parameterId);
-    if (it == m_chartComponents.end()) {
-        return;
+    if (m_chartComponents.chart) {
+        m_chartComponents.chart->zoomReset();
+    }
+    if (m_chartComponents.axisFrequency) {
+        m_chartComponents.axisFrequency->setRange(m_chartComponents.baseFrequencyMin, m_chartComponents.baseFrequencyMax);
+    }
+    if (m_chartComponents.axisMagnitude) {
+        m_chartComponents.axisMagnitude->setRange(m_chartComponents.baseMagnitudeMin, m_chartComponents.baseMagnitudeMax);
+    }
+    if (m_chartComponents.axisPhase) {
+        m_chartComponents.axisPhase->setRange(m_chartComponents.basePhaseMin, m_chartComponents.basePhaseMax);
+    }
+    for (auto it = m_parameterSeries.begin(); it != m_parameterSeries.end(); ++it) {
+        if (auto *threshold = it.value().thresholdSeries) {
+            threshold->clear();
+            threshold->setVisible(false);
+        }
+    }
+    updateAxisVisibility();
+}
+
+void MainWindow::updateAxisVisibility()
+{
+    bool magnitudeVisible = false;
+    bool phaseVisible = false;
+
+    for (auto it = m_parameterSeries.constBegin(); it != m_parameterSeries.constEnd(); ++it) {
+        const auto &controls = it.value();
+        if (!magnitudeVisible && controls.magnitudeSeries && controls.magnitudeSeries->isVisible()) {
+            magnitudeVisible = true;
+        }
+        if (!phaseVisible && controls.phaseSeries && controls.phaseSeries->isVisible()) {
+            phaseVisible = true;
+        }
+        if (magnitudeVisible && phaseVisible) {
+            break;
+        }
     }
 
-    auto &components = it.value();
-    if (components.chart) {
-        components.chart->zoomReset();
+    if (m_chartComponents.axisMagnitude) {
+        m_chartComponents.axisMagnitude->setVisible(magnitudeVisible);
     }
-    if (components.axisFrequency) {
-        components.axisFrequency->setRange(components.baseFrequencyMin, components.baseFrequencyMax);
-    }
-    if (components.axisMagnitude) {
-        components.axisMagnitude->setRange(components.baseMagnitudeMin, components.baseMagnitudeMax);
-    }
-    if (components.axisPhase) {
-        components.axisPhase->setRange(components.basePhaseMin, components.basePhaseMax);
-    }
-    if (components.thresholdSeries) {
-        components.thresholdSeries->clear();
-        components.thresholdSeries->setVisible(false);
+    if (m_chartComponents.axisPhase) {
+        m_chartComponents.axisPhase->setVisible(phaseVisible);
     }
 }
 

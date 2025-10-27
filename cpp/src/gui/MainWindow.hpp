@@ -10,6 +10,7 @@
 #include <QtCharts/QChart>
 #include <QtCharts/QChartView>
 #include <QtCharts/QLineSeries>
+#include <QColor>
 #include <QtCharts/QValueAxis>
 #include <QVariant>
 #include <QBoxLayout>
@@ -79,7 +80,7 @@ private:
     QWidget *createTestControlPanel();
     QWidget *createChartsPanel();
     QWidget *createStatusPanel();
-    QWidget *createChartCard(const QString &parameterId, const QString &description);
+    QWidget *createCombinedChartCard();
     QWidget *createViewTogglePanel(QWidget *parent);
 
     void refreshCalibrationList();
@@ -97,7 +98,8 @@ private:
     void updateChartsWithResults(const std::vector<librevna::headless::VNAMeasurement> &results);
     void setChartBadgeState(QLabel *badge, const QString &text, const QString &state);
     void setAllChartBadges(const QString &text, const QString &state);
-    void resetChartToBaseline(const QString &parameterId);
+    void resetChartToBaseline();
+    void updateAxisVisibility();
     void updateThresholdEditorsEnabled();
     void resetThresholdEditorsToDefault();
     [[nodiscard]] QHash<QString, double> collectThresholds() const;
@@ -178,19 +180,27 @@ private:
     bool m_initialShowHandled = false;
     QSet<QWidget*> m_touchInputWidgets;
 
-    struct ChartComponents
+    struct ParameterSeriesControls
     {
         QLabel *badge = nullptr;
-        QChart *chart = nullptr;
-        QChartView *view = nullptr;
         QLineSeries *magnitudeSeries = nullptr;
         QLineSeries *phaseSeries = nullptr;
-        QValueAxis *axisFrequency = nullptr;
-        QValueAxis *axisMagnitude = nullptr;
-        QValueAxis *axisPhase = nullptr;
         QCheckBox *magnitudeToggle = nullptr;
         QCheckBox *phaseToggle = nullptr;
         QLineSeries *thresholdSeries = nullptr;
+        QToolButton *magnitudeColorButton = nullptr;
+        QToolButton *phaseColorButton = nullptr;
+        QColor magnitudeColor;
+        QColor phaseColor;
+    };
+
+    struct ChartComponents
+    {
+        QChart *chart = nullptr;
+        QChartView *view = nullptr;
+        QValueAxis *axisFrequency = nullptr;
+        QValueAxis *axisMagnitude = nullptr;
+        QValueAxis *axisPhase = nullptr;
         double baseFrequencyMin = 0.0;
         double baseFrequencyMax = 1.0;
         double baseMagnitudeMin = -100.0;
@@ -211,6 +221,7 @@ private:
     std::thread m_sweepThread;
     std::atomic<bool> m_cancelRequested{false};
     std::atomic<bool> m_sweepInProgress{false};
-    QHash<QString, ChartComponents> m_chartComponents;
+    ChartComponents m_chartComponents;
+    QHash<QString, ParameterSeriesControls> m_parameterSeries;
     std::vector<librevna::headless::VNAMeasurement> m_latestMeasurements;
 };
