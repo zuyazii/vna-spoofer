@@ -108,11 +108,11 @@ void MainView::buildUi() {
     m_sidebarScroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     m_sidebarScroll->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
     m_sidebarScroll->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Expanding);
-    m_sidebarScroll->setMinimumWidth(260);
-    m_sidebarScroll->setMaximumWidth(400);
 
     m_sidebar = new Sidebar;
     m_sidebarScroll->setWidget(m_sidebar);
+    m_sidebarScroll->setMinimumWidth(m_sidebar->minimumWidth());
+    m_sidebarScroll->setMaximumWidth(m_sidebar->maximumWidth());
 
     auto* rightPane = new QWidget(m_mainSplitter);
     auto* rightPaneLayout = new QVBoxLayout(rightPane);
@@ -129,7 +129,7 @@ void MainView::buildUi() {
     plotTopRow->setSpacing(8);
 
     m_sidebarToggle = new QToolButton(plotSection);
-    m_sidebarToggle->setIcon(QIcon(QStringLiteral(":/ui/theme/icons/sidebar.svg")));
+    m_sidebarToggle->setIcon(QIcon(QStringLiteral(":/ui/theme/icons/sidebar_toggle.svg")));
     m_sidebarToggle->setToolTip(tr("Toggle Sidebar"));
     m_sidebarToggle->setCheckable(false);
     m_sidebarToggle->setAutoRaise(false);
@@ -168,7 +168,7 @@ void MainView::buildUi() {
     bottomHeader->addStretch(1);
 
     m_bottomToggle = new QToolButton(m_bottomWrapper);
-    m_bottomToggle->setIcon(QIcon(QStringLiteral(":/ui/theme/icons/chevron_down.svg")));
+    m_bottomToggle->setIcon(QIcon(QStringLiteral(":/ui/theme/icons/bottom_toggle.svg")));
     m_bottomToggle->setToolTip(tr("Toggle Bottom Panel"));
     m_bottomToggle->setFixedSize(32, 32);
     m_bottomToggle->setIconSize(QSize(14, 14));
@@ -307,11 +307,10 @@ void MainView::toggleSidebarVisibility() {
     if (!m_mainSplitter) {
         return;
     }
+    const int sidebarWidth = m_sidebar ? m_sidebar->sizeHint().width() : 280;
     const QList<int> sizes = m_mainSplitter->sizes();
     if (!m_sidebarCollapsed) {
-        if (sizes.size() >= 2) {
-            m_lastSidebarWidth = std::max(sizes.at(0), m_sidebarScroll ? m_sidebarScroll->sizeHint().width() : 1);
-        }
+        m_lastSidebarWidth = sidebarWidth;
         QList<int> newSizes{0};
         if (sizes.size() >= 2) {
             newSizes.append(sizes.at(0) + sizes.at(1));
@@ -324,7 +323,7 @@ void MainView::toggleSidebarVisibility() {
             m_sidebarScroll->setMinimumWidth(0);
         }
         m_sidebarCollapsed = true;
-        m_sidebarToggle->setIcon(QIcon(QStringLiteral(":/ui/theme/icons/chevron_right.svg")));
+        m_sidebarToggle->setIcon(QIcon(QStringLiteral(":/ui/theme/icons/sidebar_toggle.svg")));
     } else {
         int total = std::accumulate(sizes.begin(), sizes.end(), 0);
         if (total <= 0) {
@@ -333,21 +332,16 @@ void MainView::toggleSidebarVisibility() {
         if (total <= 0) {
             total = 800;
         }
-        const int minSidebar = 240;
-        const int maxSidebar = std::max(minSidebar, total - 200);
-        const int sidebarWidth = std::clamp(m_lastSidebarWidth, minSidebar, maxSidebar);
-        const int plotWidth = std::max(total - sidebarWidth, 200);
-        const int preferred = std::clamp(sidebarWidth, 260, 360);
+        const int preferred = sidebarWidth;
         QList<int> restored{preferred, std::max(total - preferred, 200)};
         m_mainSplitter->setSizes(restored);
         if (m_sidebarScroll) {
-            m_sidebarScroll->setMinimumWidth(std::max(preferred, 260));
-        }
-        if (m_sidebarScroll) {
             m_sidebarScroll->setVisible(true);
+            m_sidebarScroll->setMinimumWidth(m_sidebar ? m_sidebar->minimumWidth() : preferred);
+            m_sidebarScroll->setMaximumWidth(m_sidebar ? m_sidebar->maximumWidth() : preferred);
         }
         m_sidebarCollapsed = false;
-        m_sidebarToggle->setIcon(QIcon(QStringLiteral(":/ui/theme/icons/sidebar.svg")));
+        m_sidebarToggle->setIcon(QIcon(QStringLiteral(":/ui/theme/icons/sidebar_toggle.svg")));
     }
 }
 
@@ -359,8 +353,7 @@ void MainView::toggleBottomPanelVisibility() {
     if (m_bottomPanel) {
         m_bottomPanel->setVisible(!m_bottomCollapsed);
     }
-    m_bottomToggle->setIcon(QIcon(m_bottomCollapsed ? QStringLiteral(":/ui/theme/icons/chevron_up.svg")
-                                                    : QStringLiteral(":/ui/theme/icons/chevron_down.svg")));
+    m_bottomToggle->setIcon(QIcon(QStringLiteral(":/ui/theme/icons/bottom_toggle.svg")));
 }
 
 QHash<QString, QString> MainView::loadStrings(const QString& path) const {

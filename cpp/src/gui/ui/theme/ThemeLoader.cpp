@@ -93,6 +93,16 @@ QString ThemeLoader::applyTokens(const QString& tmpl) {
 
     const QColor bgCard(QString::fromUtf8(BG_Card));
     const QColor hover = adjustLuminance(bgCard, 0.96); // ~4% darker
+    const QColor accentParam(QString::fromUtf8(AccentParam));
+    const QColor accentStart(QString::fromUtf8(AccentStart));
+    const QColor accentStop(QString::fromUtf8(AccentStop));
+
+    const QColor accentParamHover = adjustLuminance(accentParam, 1.08);
+    const QColor accentParamPressed = adjustLuminance(accentParam, 0.88);
+    const QColor accentStartHover = adjustLuminance(accentStart, 1.08);
+    const QColor accentStartPressed = adjustLuminance(accentStart, 0.88);
+    const QColor accentStopHover = adjustLuminance(accentStop, 1.08);
+    const QColor accentStopPressed = adjustLuminance(accentStop, 0.88);
 
     const QMap<QString, QString> replacements{
         {QStringLiteral("{{FontFamily}}"), QString::fromUtf8(Font::Family)},
@@ -104,6 +114,17 @@ QString ThemeLoader::applyTokens(const QString& tmpl) {
         {QStringLiteral("{{StrokeGrid}}"), QString::fromUtf8(StrokeGrid)},
         {QStringLiteral("{{Focus}}"), QString::fromUtf8(Focus)},
         {QStringLiteral("{{Hover}}"), hex(hover)},
+        {QStringLiteral("{{AccentParam}}"), QString::fromUtf8(AccentParam)},
+        {QStringLiteral("{{AccentParamHover}}"), hex(accentParamHover)},
+        {QStringLiteral("{{AccentParamPressed}}"), hex(accentParamPressed)},
+        {QStringLiteral("{{AccentStart}}"), QString::fromUtf8(AccentStart)},
+        {QStringLiteral("{{AccentStartHover}}"), hex(accentStartHover)},
+        {QStringLiteral("{{AccentStartPressed}}"), hex(accentStartPressed)},
+        {QStringLiteral("{{AccentStop}}"), QString::fromUtf8(AccentStop)},
+        {QStringLiteral("{{AccentStopHover}}"), hex(accentStopHover)},
+        {QStringLiteral("{{AccentStopPressed}}"), hex(accentStopPressed)},
+        {QStringLiteral("{{InkOnAccent}}"), QString::fromUtf8(InkOnAccent)},
+        {QStringLiteral("{{AccentResetBorder}}"), QString::fromUtf8(AccentResetBorder)},
         {QStringLiteral("{{RadiusXS}}"), QString::number(radius(Radius::XS))},
         {QStringLiteral("{{RadiusSM}}"), QString::number(radius(Radius::SM))},
         {QStringLiteral("{{RadiusMD}}"), QString::number(radius(Radius::MD))},

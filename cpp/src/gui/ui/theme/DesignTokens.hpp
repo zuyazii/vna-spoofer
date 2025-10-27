@@ -8,13 +8,18 @@
 namespace ui::theme::Tokens {
 
 // Colors
-inline constexpr auto BG_Canvas = "#E7E1D8";
-inline constexpr auto BG_Card = "#E7E1D8";
-inline constexpr auto InkPrimary = "#2B2B29";
-inline constexpr auto InkMuted = "#6E665E";
-inline constexpr auto StrokeSoft = "#D0C9C2";
-inline constexpr auto StrokeGrid = "#D8D0C8";
+inline constexpr auto BG_Canvas = "#E0D8D1";
+inline constexpr auto BG_Card = "#D5CCC4";
+inline constexpr auto InkPrimary = "#221F1B";
+inline constexpr auto InkMuted = "#6B655F";
+inline constexpr auto StrokeSoft = "#CABEB4";
+inline constexpr auto StrokeGrid = "#D7CCC2";
 inline constexpr auto Focus = "#5A4FCF";
+inline constexpr auto AccentParam = "#635C56";
+inline constexpr auto AccentStart = "#423C38";
+inline constexpr auto AccentStop = "#B95C5C";
+inline constexpr auto AccentResetBorder = "#635C56";
+inline constexpr auto InkOnAccent = "#E0D8D1";
 
 // Series colors
 inline constexpr auto S11 = "#E2554E";

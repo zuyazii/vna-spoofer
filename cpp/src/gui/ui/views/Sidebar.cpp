@@ -35,8 +35,8 @@ QString formatKey(const QString& base, const QString& entry) {
 Sidebar::Sidebar(QWidget* parent)
     : QWidget(parent) {
     setObjectName(QStringLiteral("Sidebar"));
-    setMinimumWidth(260);
-    setMaximumWidth(280);
+    setMinimumWidth(280);
+    setMaximumWidth(QWIDGETSIZE_MAX);
     setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
     setFocusPolicy(Qt::StrongFocus);
     setAttribute(Qt::WA_StyledBackground, true);
@@ -139,6 +139,8 @@ void Sidebar::buildUi() {
         auto* label = new QLabel(fallback, this);
         label->setProperty("role", "subtitle");
         label->setAccessibleDescription(fallback);
+        label->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+        label->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
         *store = label;
         return label;
     };
@@ -153,6 +155,7 @@ void Sidebar::buildUi() {
         auto* frame = new QFrame(this);
         frame->setProperty("type", "card");
         frame->setFrameShape(QFrame::NoFrame);
+        frame->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
 
         auto* frameLayout = new QVBoxLayout(frame);
         frameLayout->setContentsMargins(0, 0, 0, 0);
@@ -162,6 +165,7 @@ void Sidebar::buildUi() {
         list->setSelectionMode(QAbstractItemView::SingleSelection);
         list->setUniformItemSizes(true);
         list->setMinimumHeight(120);
+        list->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
         frameLayout->addWidget(list);
 
         *listStore = list;
@@ -224,14 +228,18 @@ void Sidebar::buildUi() {
     const QStringList params{QStringLiteral("S11"), QStringLiteral("S12"), QStringLiteral("S21"),
                              QStringLiteral("S22")};
 
-    auto* paramGrid = new QGridLayout;
+    auto* paramWrapper = new QWidget(this);
+    paramWrapper->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+    auto* paramGrid = new QGridLayout(paramWrapper);
     paramGrid->setContentsMargins(0, 0, 0, 0);
-    paramGrid->setHorizontalSpacing(16);
+    paramGrid->setHorizontalSpacing(8);
     paramGrid->setVerticalSpacing(12);
 
-    int column = 0;
+    const int columnCount = params.size();
+    int index = 0;
     for (const QString& param : params) {
         auto* cell = new QWidget(this);
+        cell->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
         auto* cellLayout = new QVBoxLayout(cell);
         cellLayout->setContentsMargins(0, 0, 0, 0);
         cellLayout->setSpacing(6);
@@ -239,7 +247,8 @@ void Sidebar::buildUi() {
         auto* button = new QPushButton(param, cell);
         button->setCheckable(true);
         button->setChecked(true);
-        button->setMinimumSize(80, 80);
+        button->setMinimumSize(56, 56);
+        button->setMaximumHeight(64);
         button->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
         button->setProperty("role", "param");
         cellLayout->addWidget(button);
@@ -255,13 +264,12 @@ void Sidebar::buildUi() {
         spin->setSingleStep(0.100);
         spin->setSuffix(QStringLiteral(" dB"));
         spin->setAlignment(Qt::AlignCenter);
-        spin->setFixedWidth(72);
+        spin->setMinimumWidth(60);
+        spin->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
         spin->setValue(-20.000);
         spin->setMinimumHeight(32);
         spin->setProperty("paramName", param);
-        thresholdRow->addStretch(1);
         thresholdRow->addWidget(spin);
-        thresholdRow->addStretch(1);
         cellLayout->addLayout(thresholdRow);
 
         auto* caption = new QLabel(tr("threshold"), cell);
@@ -269,31 +277,37 @@ void Sidebar::buildUi() {
         caption->setProperty("role", "caption");
         cellLayout->addWidget(caption);
 
-        paramGrid->addWidget(cell, 0, column++);
+        const int row = index / columnCount;
+        const int column = index % columnCount;
+        paramGrid->addWidget(cell, row, column);
+        ++index;
 
         m_paramButtons.insert(param, button);
         m_thresholds.insert(param, spin);
         m_thresholdCaptions.insert(param, caption);
     }
 
-    for (int c = 0; c < paramGrid->columnCount(); ++c) {
+    for (int c = 0; c < columnCount; ++c) {
         paramGrid->setColumnStretch(c, 1);
     }
-    rootLayout->addLayout(paramGrid);
+    rootLayout->addWidget(paramWrapper);
 
     auto* buttonRow = new QHBoxLayout;
     buttonRow->setSpacing(12);
 
     m_startButton = new QPushButton(tr("Start"), this);
     m_startButton->setMinimumHeight(40);
+    m_startButton->setProperty("variant", "start");
     buttonRow->addWidget(m_startButton);
 
     m_stopButton = new QPushButton(tr("Stop"), this);
     m_stopButton->setMinimumHeight(40);
+    m_stopButton->setProperty("variant", "stop");
     buttonRow->addWidget(m_stopButton);
 
     m_resetButton = new QPushButton(tr("Reset"), this);
     m_resetButton->setMinimumHeight(40);
+    m_resetButton->setProperty("variant", "reset");
     buttonRow->addWidget(m_resetButton);
 
     rootLayout->addLayout(buttonRow);

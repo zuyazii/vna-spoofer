@@ -104,34 +104,108 @@ QPushButton:pressed,
 QToolButton:pressed {
     background-color: {{InkMuted}};
     border-color: {{InkMuted}};
-    color: {{BG_Canvas}};
-}
-
-QPushButton[role="param"] {
-    min-width: 80px;
-    min-height: 80px;
-    border-radius: {{RadiusMD}};
-    font-size: {{Font::LG}}pt;
-}
-
-QPushButton[role="param"]:checked {
-    color: {{BG_Canvas}};
+    color: {{InkOnAccent}};
 }
 
 QPushButton:checked {
-    background-color: {{InkPrimary}};
-    border-color: {{InkPrimary}};
-    color: {{BG_Canvas}};
+    background-color: {{AccentParam}};
+    border-color: {{AccentParam}};
+    color: {{InkOnAccent}};
 }
 
 QPushButton:checked:hover {
-    background-color: {{InkPrimary}};
+    background-color: {{AccentParamHover}};
+    border-color: {{AccentParamHover}};
+}
+
+QPushButton:checked:pressed {
+    background-color: {{AccentParamPressed}};
+    border-color: {{AccentParamPressed}};
+}
+
+QPushButton[role="param"] {
+    min-width: 0px;
+    min-height: 56px;
+    border-radius: {{RadiusMD}};
+    font-size: {{Font::LG}}pt;
+    background-color: {{BG_Canvas}};
+    border-color: {{StrokeSoft}};
+    color: {{InkPrimary}};
+}
+
+QPushButton[role="param"]:hover {
+    background-color: {{Hover}};
+}
+
+QPushButton[role="param"]:pressed {
+    background-color: {{AccentParamPressed}};
+    border-color: {{AccentParamPressed}};
+    color: {{InkOnAccent}};
+}
+
+QPushButton[role="param"]:checked {
+    background-color: {{AccentParam}};
+    border-color: {{AccentParam}};
+    color: {{InkOnAccent}};
+}
+
+QPushButton[role="param"]:checked:hover {
+    background-color: {{AccentParamHover}};
+    border-color: {{AccentParamHover}};
+}
+
+QPushButton[variant="start"] {
+    background-color: {{AccentStart}};
+    border-color: {{AccentStart}};
+    color: {{InkOnAccent}};
+}
+
+QPushButton[variant="start"]:hover {
+    background-color: {{AccentStartHover}};
+    border-color: {{AccentStartHover}};
+}
+
+QPushButton[variant="start"]:pressed {
+    background-color: {{AccentStartPressed}};
+    border-color: {{AccentStartPressed}};
+}
+
+QPushButton[variant="stop"] {
+    background-color: {{AccentStop}};
+    border-color: {{AccentStop}};
+    color: {{InkOnAccent}};
+}
+
+QPushButton[variant="stop"]:hover {
+    background-color: {{AccentStopHover}};
+    border-color: {{AccentStopHover}};
+}
+
+QPushButton[variant="stop"]:pressed {
+    background-color: {{AccentStopPressed}};
+    border-color: {{AccentStopPressed}};
+}
+
+QPushButton[variant="reset"] {
+    background-color: {{BG_Canvas}};
+    border-color: {{AccentResetBorder}};
+    color: {{InkPrimary}};
+}
+
+QPushButton[variant="reset"]:hover {
+    background-color: {{Hover}};
+}
+
+QPushButton[variant="reset"]:pressed {
+    background-color: {{AccentResetBorder}};
+    border-color: {{AccentResetBorder}};
+    color: {{InkOnAccent}};
 }
 
 QPushButton:disabled,
 QToolButton:disabled {
-    color: rgba(43, 43, 41, 0.4);
-    border-color: rgba(208, 201, 194, 0.4);
+    color: rgba(34, 31, 27, 0.4);
+    border-color: rgba(202, 190, 180, 0.4);
 }
 
 /* Focus */
