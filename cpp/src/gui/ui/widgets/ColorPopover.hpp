@@ -6,10 +6,7 @@
 #include <QColor>
 #include <QWidget>
 
-class QComboBox;
-class QDoubleSpinBox;
 class QLineEdit;
-class QPushButton;
 class QKeyEvent;
 class QHideEvent;
 
@@ -18,7 +15,8 @@ namespace ui::widgets {
 namespace detail {
 class ColorPlaneWidget;
 class HueSliderWidget;
-class AlphaSliderWidget;
+class SaturationSliderWidget;
+class ValueSliderWidget;
 } // namespace detail
 
 class ColorPopover : public QWidget {
@@ -43,24 +41,23 @@ private:
     void syncEditors();
     void updatePreview();
     void updateFromHex();
-    void updateFromHsl();
-    void updateFromPlane(double saturation, double lightness);
+    void updateFromRgb();
+    void updateFromPlane(double saturation, double value);
     void updateFromHue(double hue);
-    void updateFromAlpha(double alpha);
+    void updateFromSaturation(double saturation);
+    void updateFromValue(double value);
 
     QColor m_color;
     bool m_blockSignals = false;
     QWidget* m_preview = nullptr;
     detail::ColorPlaneWidget* m_colorField = nullptr;
     detail::HueSliderWidget* m_hueSlider = nullptr;
-    detail::AlphaSliderWidget* m_alphaSlider = nullptr;
-    QPushButton* m_dropperButton = nullptr;
-    QComboBox* m_modeCombo = nullptr;
     QLineEdit* m_hexEdit = nullptr;
-    QDoubleSpinBox* m_hSpin = nullptr;
-    QDoubleSpinBox* m_sSpin = nullptr;
-    QDoubleSpinBox* m_lSpin = nullptr;
-    QDoubleSpinBox* m_alphaSpin = nullptr;
+    QLineEdit* m_rEdit = nullptr;
+    QLineEdit* m_gEdit = nullptr;
+    QLineEdit* m_bEdit = nullptr;
+    detail::SaturationSliderWidget* m_saturationSlider = nullptr;
+    detail::ValueSliderWidget* m_valueSlider = nullptr;
 };
 
 } // namespace ui::widgets

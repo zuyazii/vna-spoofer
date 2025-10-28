@@ -58,7 +58,7 @@ void SeriesCheck::buildUi() {
     m_colorButton->setAccessibleName(tr("%1 Color").arg(m_seriesName));
     m_colorButton->setCheckable(false);
     m_colorButton->setAutoRaise(false);
-    m_colorButton->setFixedSize(24, 24);
+    m_colorButton->setFixedSize(18, 18);
     m_colorButton->setToolTip(tr("Adjust %1 color").arg(m_seriesName));
     m_colorButton->setProperty("variant", "ghost");
     m_colorButton->setCursor(Qt::PointingHandCursor);
@@ -77,16 +77,19 @@ void SeriesCheck::updateIndicator() {
     if (!m_colorButton) {
         return;
     }
+    const int radius = ui::theme::Tokens::radius(ui::theme::Tokens::Radius::XS);
     QString style = QStringLiteral(
         "QToolButton { "
         "border-radius: %1px;"
         "border: 1px solid %2;"
         "background-color: %3;"
-        "min-width: 24px;"
-        "min-height: 24px;"
+        "min-width: 18px;"
+        "min-height: 18px;"
+        "max-width: 18px;"
+        "max-height: 18px;"
         "}"
         "QToolButton:hover { background-color: %4; }")
-                       .arg(ui::theme::Tokens::radius(ui::theme::Tokens::Radius::SM))
+                       .arg(radius)
                        .arg(QString::fromUtf8(ui::theme::Tokens::StrokeSoft))
                        .arg(m_color.name(QColor::HexRgb))
                        .arg(m_color.lighter(110).name(QColor::HexRgb));

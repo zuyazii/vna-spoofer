@@ -262,7 +262,7 @@ void MainView::buildUi() {
 
     auto* plotSection = new QWidget(rightPane);
     auto* plotLayout = new QVBoxLayout(plotSection);
-    plotLayout->setContentsMargins(0, 0, 0, 0);
+    plotLayout->setContentsMargins(12, 0, 0, 0);
     plotLayout->setSpacing(0);
 
     auto* plotTopRow = new QHBoxLayout;
@@ -496,7 +496,15 @@ void MainView::updateColorsUi() {
         return QColor(QString::fromUtf8(ui::theme::Tokens::S11));
     };
 
-    m_bottomPanel->setSeriesColors(m_seriesMagnitudeColors, m_seriesPhaseColors);
+    auto phaseVariantFor = [](const QColor& base) -> QColor {
+        QColor variant = base.lighter(115);
+        if (variant == base) {
+            variant = base.darker(115);
+        }
+        variant.setAlpha(255);
+        return variant;
+    };
+
     for (const QString& name : kSeriesNames) {
         QColor magnitudeColor = m_seriesMagnitudeColors.value(name);
         if (!magnitudeColor.isValid()) {
@@ -505,12 +513,16 @@ void MainView::updateColorsUi() {
         }
         QColor phaseColor = m_seriesPhaseColors.value(name);
         if (!phaseColor.isValid()) {
-            phaseColor = magnitudeColor;
+            phaseColor = phaseVariantFor(magnitudeColor);
+            m_seriesPhaseColors.insert(name, phaseColor);
+        } else if (phaseColor == magnitudeColor) {
+            phaseColor = phaseVariantFor(magnitudeColor);
             m_seriesPhaseColors.insert(name, phaseColor);
         }
         m_plot->setSeriesMagnitudeColor(name, magnitudeColor);
         m_plot->setSeriesPhaseColor(name, phaseColor);
     }
+    m_bottomPanel->setSeriesColors(m_seriesMagnitudeColors, m_seriesPhaseColors);
 }
 
 void MainView::toggleSidebarVisibility() {

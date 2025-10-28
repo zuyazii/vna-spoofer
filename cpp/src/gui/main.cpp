@@ -19,6 +19,7 @@ int main(int argc, char* argv[]) {
     window->setObjectName(QStringLiteral("AppWindow"));
     auto* mainView = new ui::views::MainView(window);
     window->setCentralWidget(mainView);
+    ui::theme::ThemeLoader::applyWindowChrome(window);
     window->resize(1280, 800);
     window->show();
 

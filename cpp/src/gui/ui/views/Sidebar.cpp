@@ -3,6 +3,7 @@
 #include "../../ui/theme/DesignTokens.hpp"
 
 #include <QAbstractItemView>
+#include <QAbstractSpinBox>
 #include <QCursor>
 #include <QDoubleSpinBox>
 #include <QFrame>
@@ -276,7 +277,17 @@ void Sidebar::buildUi() {
         return label;
     };
 
-    auto makeListSection = [this, rootLayout, addSectionHeader](const QString& key,
+    auto addDivider = [this, rootLayout]() {
+        rootLayout->addSpacing(kSectionSpacing / 2);
+        auto* divider = new QFrame(this);
+        divider->setObjectName(QStringLiteral("SidebarDivider"));
+        divider->setFixedHeight(1);
+        divider->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+        rootLayout->addWidget(divider);
+        rootLayout->addSpacing(kSectionSpacing / 2);
+    };
+
+    auto makeListSection = [this, rootLayout, addSectionHeader, addDivider](const QString& key,
                                                                 const QString& fallback,
                                                                 QListView** listStore,
                                                                 QLabel** labelStore,
@@ -305,7 +316,7 @@ void Sidebar::buildUi() {
 
         *listStore = list;
         rootLayout->addWidget(frame);
-        rootLayout->addSpacing(kSectionSpacing);
+        addDivider();
     };
 
     const QIcon scanIcon(QStringLiteral(":/ui/theme/icons/scan.svg"));
@@ -323,6 +334,51 @@ void Sidebar::buildUi() {
     auto* frequencyRow = new QHBoxLayout;
     frequencyRow->setSpacing(12);
 
+    const int kControlHeight = 40;
+    auto createSpinControl = [this, kControlHeight](QAbstractSpinBox* spin,
+                                                    const QString& accessibleBase) -> QWidget* {
+        spin->setButtonSymbols(QAbstractSpinBox::NoButtons);
+        spin->setFixedHeight(kControlHeight);
+        auto* container = new QWidget(this);
+        container->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+        auto* layout = new QHBoxLayout(container);
+        layout->setContentsMargins(0, 0, 0, 0);
+        layout->setSpacing(10);
+        layout->addWidget(spin, 1);
+        layout->setAlignment(spin, Qt::AlignVCenter);
+
+        auto* buttonStrip = new QWidget(container);
+        buttonStrip->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+        auto* buttonLayout = new QHBoxLayout(buttonStrip);
+        buttonLayout->setContentsMargins(0, 0, 0, 0);
+        buttonLayout->setSpacing(8);
+        buttonLayout->setAlignment(Qt::AlignCenter);
+
+        auto makeButton = [&](const QString& iconPath, const QString& suffix,
+                              auto stepFn) {
+            auto* button = new QToolButton(buttonStrip);
+            button->setIcon(QIcon(iconPath));
+            button->setIconSize(QSize(16, 16));
+            button->setFixedSize(kControlHeight, kControlHeight);
+            button->setProperty("variant", "ghost");
+            button->setAutoRepeat(true);
+            button->setAutoRepeatDelay(250);
+            button->setAutoRepeatInterval(60);
+            button->setAccessibleName(accessibleBase + suffix);
+            QObject::connect(button, &QToolButton::clicked, spin, stepFn);
+            buttonLayout->addWidget(button);
+            return button;
+        };
+
+        makeButton(QStringLiteral(":/ui/theme/icons/spin_up.svg"), tr(" increase"),
+                   &QAbstractSpinBox::stepUp);
+        makeButton(QStringLiteral(":/ui/theme/icons/spin_down.svg"), tr(" decrease"),
+                   &QAbstractSpinBox::stepDown);
+
+        layout->addWidget(buttonStrip, 0, Qt::AlignVCenter);
+        return container;
+    };
+
     m_startSpin = new QDoubleSpinBox(this);
     m_startSpin->setDecimals(3);
     m_startSpin->setRange(kStartMin, kStartMax);
@@ -330,7 +386,7 @@ void Sidebar::buildUi() {
     m_startSpin->setSingleStep(0.010);
     m_startSpin->setSuffix(QStringLiteral(" GHz"));
     m_startSpin->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-    frequencyRow->addWidget(m_startSpin);
+    frequencyRow->addWidget(createSpinControl(m_startSpin, tr("Start frequency")));
 
     auto* dash = new QLabel(QStringLiteral("-"), this);
     dash->setAlignment(Qt::AlignCenter);
@@ -343,13 +399,13 @@ void Sidebar::buildUi() {
     m_endSpin->setSingleStep(0.010);
     m_endSpin->setSuffix(QStringLiteral(" GHz"));
     m_endSpin->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-    frequencyRow->addWidget(m_endSpin);
+    frequencyRow->addWidget(createSpinControl(m_endSpin, tr("Stop frequency")));
 
     frequencyRow->setStretch(0, 1);
     frequencyRow->setStretch(2, 1);
 
     rootLayout->addLayout(frequencyRow);
-    rootLayout->addSpacing(kSectionSpacing);
+    addDivider();
 
     addSectionHeader(QStringLiteral("sidebar.points"), tr("Points"), &m_pointsLabel, nullptr, QIcon(),
                      QString());
@@ -358,10 +414,9 @@ void Sidebar::buildUi() {
     m_pointsSpin->setRange(1, 4096);
     m_pointsSpin->setValue(201);
     m_pointsSpin->setSingleStep(10);
-    m_pointsSpin->setFixedHeight(32);
     m_pointsSpin->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-    rootLayout->addWidget(m_pointsSpin);
-    rootLayout->addSpacing(kSectionSpacing);
+    rootLayout->addWidget(createSpinControl(m_pointsSpin, tr("Point count")));
+    addDivider();
 
     addSectionHeader(QStringLiteral("sidebar.parameters"), tr("S-Parameters"), &m_parametersLabel,
                      nullptr, QIcon(), QString());
@@ -432,7 +487,7 @@ void Sidebar::buildUi() {
         paramGrid->setColumnStretch(c, 1);
     }
     rootLayout->addWidget(paramWrapper);
-    rootLayout->addSpacing(kSectionSpacing);
+    addDivider();
 
     auto* buttonRow = new QHBoxLayout;
     buttonRow->setSpacing(12);

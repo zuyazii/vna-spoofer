@@ -10,7 +10,15 @@
 #include <QTextStream>
 #include <QStringConverter>
 #include <QStringList>
+#include <QWidget>
 #include <algorithm>
+
+#if defined(Q_OS_WIN)
+#define NOMINMAX
+#include <windows.h>
+#include <QLibrary>
+#include <QOperatingSystemVersion>
+#endif
 
 namespace ui::theme {
 
@@ -69,6 +77,63 @@ QString ThemeLoader::stylesheet() {
         cached = applyTokens(tmpl);
     }
     return cached;
+}
+
+void ThemeLoader::applyWindowChrome(QWidget* widget) {
+#if defined(Q_OS_WIN)
+    if (!widget) {
+        return;
+    }
+
+    QWidget* topLevel = widget->window();
+    if (!topLevel) {
+        return;
+    }
+
+    topLevel->winId();
+    const HWND hwnd = reinterpret_cast<HWND>(topLevel->winId());
+    if (!hwnd) {
+        return;
+    }
+
+    if (QOperatingSystemVersion::current() < QOperatingSystemVersion::Windows11) {
+        return;
+    }
+
+    static QLibrary dwmLib(QStringLiteral("dwmapi"));
+    if (!dwmLib.isLoaded() && !dwmLib.load()) {
+        return;
+    }
+
+    using DwmSetWindowAttributeFn = HRESULT(WINAPI*)(HWND, DWORD, LPCVOID, DWORD);
+    auto* setAttribute =
+        reinterpret_cast<DwmSetWindowAttributeFn>(dwmLib.resolve("DwmSetWindowAttribute"));
+    if (!setAttribute) {
+        return;
+    }
+
+    constexpr DWORD kBorderAttr = 34;  // DWMWA_BORDER_COLOR
+    constexpr DWORD kCaptionAttr = 35; // DWMWA_CAPTION_COLOR
+    constexpr DWORD kTextAttr = 36;    // DWMWA_TEXT_COLOR
+    constexpr DWORD kHeightAttr = 37;  // DWMWA_CAPTION_HEIGHT
+
+    const QColor captionColor(QString::fromUtf8(Tokens::BG_Card));
+    const COLORREF captionRef = RGB(captionColor.red(), captionColor.green(), captionColor.blue());
+    setAttribute(hwnd, kCaptionAttr, &captionRef, sizeof(captionRef));
+
+    const QColor textColor(QString::fromUtf8(Tokens::InkPrimary));
+    const COLORREF textRef = RGB(textColor.red(), textColor.green(), textColor.blue());
+    setAttribute(hwnd, kTextAttr, &textRef, sizeof(textRef));
+
+    const QColor borderColor(QString::fromUtf8(Tokens::InkPrimary));
+    const COLORREF borderRef = RGB(borderColor.red(), borderColor.green(), borderColor.blue());
+    setAttribute(hwnd, kBorderAttr, &borderRef, sizeof(borderRef));
+
+    const int captionHeight = 32; // compact title bar to match the in-app chrome
+    setAttribute(hwnd, kHeightAttr, &captionHeight, sizeof(captionHeight));
+#else
+    (void)widget;
+#endif
 }
 
 void ThemeLoader::ensureFontsRegistered() {
