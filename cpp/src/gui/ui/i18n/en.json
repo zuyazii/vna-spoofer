@@ -5,6 +5,9 @@
   "sidebar.points": "Points",
   "sidebar.parameters": "S-Parameters",
   "sidebar.thresholds": "Thresholds (dB)",
+  "sidebar.scan": "Scan for Devices",
+  "sidebar.upload": "Upload Calibration",
+  "sidebar.noDevice": "No VNA Detected",
   "actions.start": "Start",
   "actions.stop": "Stop",
   "actions.reset": "Reset",
@@ -18,6 +21,5 @@
   "panel.toggleBottom": "Toggle Bottom Panel",
   "plot.axis.frequency": "Frequency (GHz)",
   "plot.axis.magnitude": "Magnitude (dB)",
-  "plot.axis.phase": "Phase (deg)",
-  "plot.presets": "Presets"
+  "plot.axis.phase": "Phase (deg)"
 }

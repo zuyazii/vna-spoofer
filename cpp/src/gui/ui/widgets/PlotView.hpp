@@ -20,12 +20,19 @@ public:
     explicit PlotView(QWidget* parent = nullptr);
 
     void setSeriesColor(const QString& name, const QColor& color);
+    void setSeriesMagnitudeColor(const QString& name, const QColor& color);
+    void setSeriesPhaseColor(const QString& name, const QColor& color);
     void setSeriesVisible(const QString& name, bool on);
+    void setSeriesMagnitudeVisible(const QString& name, bool on);
+    void setSeriesPhaseVisible(const QString& name, bool on);
     void setShowMagnitude(bool on);
     void setShowPhase(bool on);
     void setSeriesData(const QString& name,
                        const QVector<QPointF>& magnitudePoints,
                        const QVector<QPointF>& phasePoints);
+    void setFrequencyAxisRange(double minGHz, double maxGHz);
+    void setMagnitudeAxisRange(double minDb, double maxDb);
+    void setPhaseAxisRange(double minDeg, double maxDeg);
     void applyTranslations(const QHash<QString, QString>& strings);
 
 signals:
@@ -38,8 +45,11 @@ private:
     struct SeriesSet {
         QLineSeries* magnitude = nullptr;
         QLineSeries* phase = nullptr;
-        QColor color;
-        bool visible = true;
+        QColor magnitudeColor;
+        QColor phaseColor;
+        bool enabled = true;
+        bool magnitudeVisible = true;
+        bool phaseVisible = true;
     };
 
     void initializeChart();

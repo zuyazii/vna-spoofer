@@ -11,7 +11,7 @@
 
 class QComboBox;
 class QLabel;
-class QPushButton;
+class QCheckBox;
 
 namespace ui::views {
 
@@ -21,8 +21,11 @@ class BottomPanel : public QWidget {
 public:
     explicit BottomPanel(QWidget* parent = nullptr);
 
-    void setSeriesState(const QHash<QString, bool>& visibility);
-    void setSeriesColors(const QHash<QString, QColor>& colors);
+    void setSeriesEnabled(const QHash<QString, bool>& enabled);
+    void setMagnitudeState(const QHash<QString, bool>& state);
+    void setPhaseState(const QHash<QString, bool>& state);
+    void setSeriesColors(const QHash<QString, QColor>& magnitudeColors,
+                         const QHash<QString, QColor>& phaseColors);
     void setMagnitudeVisible(bool on);
     void setPhaseVisible(bool on);
 
@@ -31,26 +34,39 @@ public:
 
 signals:
     void languageChanged(const QLocale& locale);
-    void seriesVisibilityChanged(const QString& name, bool on);
-    void seriesColorChanged(const QString& name, const QColor& color);
-    void magnitudeToggled(bool on);
-    void phaseToggled(bool on);
+    void magnitudeColorChanged(const QString& name, const QColor& color);
+    void phaseColorChanged(const QString& name, const QColor& color);
+    void magnitudeAllToggled(bool on);
+    void phaseAllToggled(bool on);
+    void seriesMagnitudeToggled(const QString& name, bool on);
+    void seriesPhaseToggled(const QString& name, bool on);
 
 private:
     void buildUi();
     void bindSignals();
     void updateTexts();
     QString trKey(const QString& key, const QString& fallback) const;
+    void updatePhaseColor(const QString& name, const QColor& color);
+    void setLanguageSelection(const QString& key);
+    void syncMagnitudeHeader();
+    void syncPhaseHeader();
 
-    QComboBox* m_languageCombo = nullptr;
     QLabel* m_languageLabel = nullptr;
-    QPushButton* m_magnitudeToggle = nullptr;
-    QPushButton* m_phaseToggle = nullptr;
-
-    QHash<QString, widgets::SeriesCheck*> m_seriesChecks;
+    QHash<QString, QCheckBox*> m_languageChecks;
+    QCheckBox* m_magnitudeHeader = nullptr;
+    QCheckBox* m_phaseHeader = nullptr;
+    QHash<QString, widgets::SeriesCheck*> m_magnitudeChecks;
+    QHash<QString, widgets::SeriesCheck*> m_phaseChecks;
 
     QHash<QString, QString> m_strings;
     QLocale m_locale;
+    QString m_activeLanguageKey;
+    QHash<QString, bool> m_enabledSeries;
+    bool m_magnitudeVisibleGlobal = true;
+    bool m_phaseVisibleGlobal = true;
+    bool m_blockLanguage = false;
+    bool m_blockMagnitude = false;
+    bool m_blockPhase = false;
 };
 
 } // namespace ui::views

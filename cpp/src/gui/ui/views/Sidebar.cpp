@@ -1,18 +1,23 @@
-#include "Sidebar.hpp"
+﻿#include "Sidebar.hpp"
 
 #include "../../ui/theme/DesignTokens.hpp"
 
 #include <QAbstractItemView>
+#include <QCursor>
 #include <QDoubleSpinBox>
 #include <QFrame>
 #include <QGridLayout>
 #include <QHBoxLayout>
+#include <QIcon>
 #include <QLabel>
+#include <QItemSelectionModel>
 #include <QListView>
 #include <QPushButton>
 #include <QSignalBlocker>
 #include <QStringListModel>
+#include <QToolButton>
 #include <QVBoxLayout>
+#include <QSize>
 
 namespace ui::views {
 
@@ -25,6 +30,8 @@ constexpr double kEndMax = 40.000;
 
 constexpr double kThresholdMin = -120.0;
 constexpr double kThresholdMax = 20.0;
+
+constexpr int kSectionSpacing = 36;
 
 QString formatKey(const QString& base, const QString& entry) {
     return base + QStringLiteral(".") + entry;
@@ -40,6 +47,7 @@ Sidebar::Sidebar(QWidget* parent)
     setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
     setFocusPolicy(Qt::StrongFocus);
     setAttribute(Qt::WA_StyledBackground, true);
+    setProperty("type", "card");
 
     buildUi();
     bindSignals();
@@ -50,10 +58,24 @@ void Sidebar::setDevices(const QStringList& devices) {
         m_deviceModel = new QStringListModel(this);
         m_deviceList->setModel(m_deviceModel);
     }
-    m_deviceModel->setStringList(devices);
-    if (!devices.isEmpty()) {
-        m_deviceList->setCurrentIndex(m_deviceModel->index(0));
+
+    QStringList listContents;
+    if (devices.isEmpty()) {
+        m_devicePlaceholderActive = true;
+        if (m_devicePlaceholderText.isEmpty()) {
+            m_devicePlaceholderText =
+                trKey(QStringLiteral("sidebar.noDevice"), tr("No VNA Detected"));
+        }
+        listContents.append(m_devicePlaceholderText);
+        m_deviceList->setEnabled(false);
+    } else {
+        m_devicePlaceholderActive = false;
+        listContents = devices;
+        m_deviceList->setEnabled(true);
     }
+
+    m_deviceModel->setStringList(listContents);
+    m_deviceList->setCurrentIndex(m_deviceModel->index(0));
 }
 
 void Sidebar::setCalibrations(const QStringList& calibrations) {
@@ -112,6 +134,65 @@ void Sidebar::setThresholdValue(const QString& name, double value) {
     }
 }
 
+void Sidebar::setSelectedDevice(int index) {
+    if (!m_deviceList || !m_deviceModel) {
+        return;
+    }
+    if (m_devicePlaceholderActive) {
+        return;
+    }
+    const int rowCount = m_deviceModel->rowCount();
+    if (index < 0 || index >= rowCount) {
+        if (auto* selection = m_deviceList->selectionModel()) {
+            selection->clearSelection();
+            selection->setCurrentIndex(QModelIndex(), QItemSelectionModel::Clear);
+        }
+        return;
+    }
+    const QModelIndex modelIndex = m_deviceModel->index(index, 0);
+    if (!modelIndex.isValid()) {
+        return;
+    }
+    if (auto* selection = m_deviceList->selectionModel()) {
+        selection->setCurrentIndex(modelIndex, QItemSelectionModel::ClearAndSelect | QItemSelectionModel::Rows);
+    }
+    m_deviceList->scrollTo(modelIndex, QAbstractItemView::PositionAtCenter);
+}
+
+void Sidebar::setSelectedCalibration(int index) {
+    if (!m_calibrationList || !m_calibrationModel) {
+        return;
+    }
+    const int rowCount = m_calibrationModel->rowCount();
+    if (index < 0 || index >= rowCount) {
+        if (auto* selection = m_calibrationList->selectionModel()) {
+            selection->clearSelection();
+            selection->setCurrentIndex(QModelIndex(), QItemSelectionModel::Clear);
+        }
+        return;
+    }
+    const QModelIndex modelIndex = m_calibrationModel->index(index, 0);
+    if (!modelIndex.isValid()) {
+        return;
+    }
+    if (auto* selection = m_calibrationList->selectionModel()) {
+        selection->setCurrentIndex(modelIndex, QItemSelectionModel::ClearAndSelect | QItemSelectionModel::Rows);
+    }
+    m_calibrationList->scrollTo(modelIndex, QAbstractItemView::PositionAtCenter);
+}
+
+void Sidebar::setSweepControlsEnabled(bool startEnabled, bool stopEnabled, bool resetEnabled) {
+    if (m_startButton) {
+        m_startButton->setEnabled(startEnabled);
+    }
+    if (m_stopButton) {
+        m_stopButton->setEnabled(stopEnabled);
+    }
+    if (m_resetButton) {
+        m_resetButton->setEnabled(resetEnabled);
+    }
+}
+
 void Sidebar::applyTranslations(const QHash<QString, QString>& strings) {
     m_strings = strings;
     updateSectionTitles();
@@ -123,6 +204,21 @@ void Sidebar::applyTranslations(const QHash<QString, QString>& strings) {
     m_startButton->setText(trKey(QStringLiteral("actions.start"), tr("Start")));
     m_stopButton->setText(trKey(QStringLiteral("actions.stop"), tr("Stop")));
     m_resetButton->setText(trKey(QStringLiteral("actions.reset"), tr("Reset")));
+    m_devicePlaceholderText = trKey(QStringLiteral("sidebar.noDevice"), tr("No VNA Detected"));
+    if (m_devicePlaceholderActive && m_deviceModel) {
+        m_deviceModel->setStringList(QStringList{m_devicePlaceholderText});
+        m_deviceList->setCurrentIndex(m_deviceModel->index(0));
+    }
+    if (m_vnaScanButton) {
+        const QString scanText = trKey(QStringLiteral("sidebar.scan"), tr("Find Devices"));
+        m_vnaScanButton->setToolTip(scanText);
+        m_vnaScanButton->setAccessibleName(scanText);
+    }
+    if (m_calibrationUploadButton) {
+        const QString uploadText = trKey(QStringLiteral("sidebar.upload"), tr("Upload Calibration"));
+        m_calibrationUploadButton->setToolTip(uploadText);
+        m_calibrationUploadButton->setAccessibleName(uploadText);
+    }
 }
 
 void Sidebar::applyLocale(const QLocale& locale) {
@@ -133,24 +229,62 @@ void Sidebar::applyLocale(const QLocale& locale) {
 void Sidebar::buildUi() {
     auto* rootLayout = new QVBoxLayout(this);
     rootLayout->setContentsMargins(16, 16, 16, 16);
-    rootLayout->setSpacing(16);
+    rootLayout->setSpacing(12);
 
-    auto makeSectionLabel = [this](const QString& key, const QString& fallback, QLabel** store) {
-        auto* label = new QLabel(fallback, this);
+    auto addSectionHeader = [this, rootLayout](const QString& key,
+                                               const QString& fallback,
+                                               QLabel** labelStore,
+                                               QToolButton** buttonStore,
+                                               const QIcon& icon,
+                                               const QString& tooltip) {
+        auto* container = new QWidget(this);
+        container->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+        auto* layout = new QHBoxLayout(container);
+        layout->setContentsMargins(0, 0, 0, 0);
+        layout->setSpacing(8);
+
+        auto* label = new QLabel(fallback, container);
         label->setProperty("role", "subtitle");
         label->setAccessibleDescription(fallback);
         label->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
         label->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-        *store = label;
+        *labelStore = label;
+        layout->addWidget(label);
+        layout->addStretch(1);
+
+        if (buttonStore) {
+            if (!icon.isNull()) {
+                auto* button = new QToolButton(container);
+                button->setAutoRaise(false);
+                button->setToolButtonStyle(Qt::ToolButtonIconOnly);
+                button->setIcon(icon);
+                button->setIconSize(QSize(20, 20));
+                button->setFixedSize(32, 32);
+                button->setProperty("variant", "ghost");
+                const QString tip = tooltip.isEmpty() ? fallback : tooltip;
+                button->setToolTip(tip);
+                button->setAccessibleName(tip);
+                button->setCursor(Qt::PointingHandCursor);
+                layout->addWidget(button);
+                *buttonStore = button;
+            } else {
+                *buttonStore = nullptr;
+            }
+        }
+
+        rootLayout->addWidget(container);
         return label;
     };
 
-    auto makeListSection = [this, rootLayout, makeSectionLabel](const QString& key,
+    auto makeListSection = [this, rootLayout, addSectionHeader](const QString& key,
                                                                 const QString& fallback,
                                                                 QListView** listStore,
-                                                                QLabel** labelStore) {
-        auto* label = makeSectionLabel(key, fallback, labelStore);
-        rootLayout->addWidget(label);
+                                                                QLabel** labelStore,
+                                                                QToolButton** buttonStore,
+                                                                const QString& objectName,
+                                                                const QIcon& icon,
+                                                                const QString& tooltip) {
+        addSectionHeader(key, fallback, labelStore, buttonStore, icon, tooltip);
 
         auto* frame = new QFrame(this);
         frame->setProperty("type", "card");
@@ -161,6 +295,7 @@ void Sidebar::buildUi() {
         frameLayout->setContentsMargins(0, 0, 0, 0);
 
         auto* list = new QListView(frame);
+        list->setObjectName(objectName);
         list->setEditTriggers(QAbstractItemView::NoEditTriggers);
         list->setSelectionMode(QAbstractItemView::SingleSelection);
         list->setUniformItemSizes(true);
@@ -170,15 +305,20 @@ void Sidebar::buildUi() {
 
         *listStore = list;
         rootLayout->addWidget(frame);
+        rootLayout->addSpacing(kSectionSpacing);
     };
 
-    makeListSection(QStringLiteral("sidebar.vna"), tr("VNA"), &m_deviceList, &m_vnaLabel);
-    makeListSection(QStringLiteral("sidebar.calibration"), tr("Calibration"), &m_calibrationList,
-                    &m_calibrationLabel);
+    const QIcon scanIcon(QStringLiteral(":/ui/theme/icons/scan.svg"));
+    const QIcon uploadIcon(QStringLiteral(":/ui/theme/icons/upload.svg"));
 
-    m_frequencyLabel = makeSectionLabel(QStringLiteral("sidebar.frequency"), tr("Frequency Range"),
-                                        &m_frequencyLabel);
-    rootLayout->addWidget(m_frequencyLabel);
+    makeListSection(QStringLiteral("sidebar.vna"), tr("VNA"), &m_deviceList, &m_vnaLabel,
+                    &m_vnaScanButton, QStringLiteral("DeviceListView"), scanIcon, tr("Find Devices"));
+    makeListSection(QStringLiteral("sidebar.calibration"), tr("Calibration"), &m_calibrationList,
+                    &m_calibrationLabel, &m_calibrationUploadButton, QStringLiteral("CalibrationListView"), uploadIcon,
+                    tr("Upload Calibration"));
+
+    addSectionHeader(QStringLiteral("sidebar.frequency"), tr("Frequency Range"), &m_frequencyLabel,
+                     nullptr, QIcon(), QString());
 
     auto* frequencyRow = new QHBoxLayout;
     frequencyRow->setSpacing(12);
@@ -192,7 +332,7 @@ void Sidebar::buildUi() {
     m_startSpin->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     frequencyRow->addWidget(m_startSpin);
 
-    auto* dash = new QLabel(QStringLiteral("–"), this);
+    auto* dash = new QLabel(QStringLiteral("-"), this);
     dash->setAlignment(Qt::AlignCenter);
     frequencyRow->addWidget(dash);
 
@@ -209,9 +349,10 @@ void Sidebar::buildUi() {
     frequencyRow->setStretch(2, 1);
 
     rootLayout->addLayout(frequencyRow);
+    rootLayout->addSpacing(kSectionSpacing);
 
-    m_pointsLabel = makeSectionLabel(QStringLiteral("sidebar.points"), tr("Points"), &m_pointsLabel);
-    rootLayout->addWidget(m_pointsLabel);
+    addSectionHeader(QStringLiteral("sidebar.points"), tr("Points"), &m_pointsLabel, nullptr, QIcon(),
+                     QString());
 
     m_pointsSpin = new QSpinBox(this);
     m_pointsSpin->setRange(1, 4096);
@@ -220,10 +361,10 @@ void Sidebar::buildUi() {
     m_pointsSpin->setFixedHeight(32);
     m_pointsSpin->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     rootLayout->addWidget(m_pointsSpin);
+    rootLayout->addSpacing(kSectionSpacing);
 
-    m_parametersLabel = makeSectionLabel(QStringLiteral("sidebar.parameters"), tr("S-Parameters"),
-                                         &m_parametersLabel);
-    rootLayout->addWidget(m_parametersLabel);
+    addSectionHeader(QStringLiteral("sidebar.parameters"), tr("S-Parameters"), &m_parametersLabel,
+                     nullptr, QIcon(), QString());
 
     const QStringList params{QStringLiteral("S11"), QStringLiteral("S12"), QStringLiteral("S21"),
                              QStringLiteral("S22")};
@@ -291,6 +432,7 @@ void Sidebar::buildUi() {
         paramGrid->setColumnStretch(c, 1);
     }
     rootLayout->addWidget(paramWrapper);
+    rootLayout->addSpacing(kSectionSpacing);
 
     auto* buttonRow = new QHBoxLayout;
     buttonRow->setSpacing(12);
@@ -341,6 +483,43 @@ void Sidebar::bindSignals() {
     connect(m_startButton, &QPushButton::clicked, this, &Sidebar::startRequested);
     connect(m_stopButton, &QPushButton::clicked, this, &Sidebar::stopRequested);
     connect(m_resetButton, &QPushButton::clicked, this, &Sidebar::resetRequested);
+
+    if (m_vnaScanButton) {
+        connect(m_vnaScanButton, &QToolButton::clicked, this, &Sidebar::vnaScanRequested);
+    }
+    if (m_calibrationUploadButton) {
+        connect(m_calibrationUploadButton, &QToolButton::clicked, this,
+                &Sidebar::calibrationUploadRequested);
+    }
+
+    if (m_deviceList) {
+        if (auto* selection = m_deviceList->selectionModel()) {
+            connect(selection, &QItemSelectionModel::currentChanged, this,
+                    [this](const QModelIndex& current, const QModelIndex&) {
+                        emit deviceSelectionChanged(current.isValid() ? current.row() : -1);
+                    });
+        }
+        connect(m_deviceList, &QListView::doubleClicked, this, [this](const QModelIndex& index) {
+            if (index.isValid()) {
+                emit deviceActivated(index.row());
+            }
+        });
+    }
+
+    if (m_calibrationList) {
+        if (auto* selection = m_calibrationList->selectionModel()) {
+            connect(selection, &QItemSelectionModel::currentChanged, this,
+                    [this](const QModelIndex& current, const QModelIndex&) {
+                        emit calibrationSelectionChanged(current.isValid() ? current.row() : -1);
+                    });
+        }
+        connect(m_calibrationList, &QListView::doubleClicked, this,
+                [this](const QModelIndex& index) {
+                    if (index.isValid()) {
+                        emit calibrationActivated(index.row());
+                    }
+                });
+    }
 }
 
 void Sidebar::updateSpinLocale() {
@@ -378,6 +557,7 @@ void Sidebar::setLabelText(const QString& key, QLabel* label, const QString& fal
 }
 
 } // namespace ui::views
+
 
 
 

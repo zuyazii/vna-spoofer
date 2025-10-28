@@ -37,7 +37,9 @@ QSplitter::handle:vertical {
 }
 
 QLabel[role="subtitle"] {
-    color: {{InkMuted}};
+    color: {{InkPrimary}};
+    font-size: {{Font::LG}}pt;
+    font-weight: 600;
 }
 
 /* Inputs */
@@ -75,10 +77,57 @@ QAbstractItemView {
     background: {{BG_Card}};
 }
 
+/* Scrollbars */
+QScrollBar {
+    background: transparent;
+    border: none;
+}
+
+QScrollBar:vertical {
+    width: 12px;
+    margin: 8px 2px 8px 0;
+}
+
+QScrollBar:horizontal {
+    height: 12px;
+    margin: 0 8px 2px 8px;
+}
+
+QScrollBar::handle {
+    background-color: {{InkMuted}};
+    border-radius: 6px;
+}
+
+QScrollBar::handle:vertical {
+    min-height: 40px;
+}
+
+QScrollBar::handle:horizontal {
+    min-width: 40px;
+}
+
+QScrollBar::handle:hover {
+    background-color: {{AccentParam}};
+}
+
+QScrollBar::add-line,
+QScrollBar::sub-line {
+    background: none;
+    border: none;
+    width: 0;
+    height: 0;
+}
+
+QScrollBar::add-page,
+QScrollBar::sub-page {
+    background: rgba(34, 31, 27, 0.08);
+    border-radius: 6px;
+}
+
 /* Buttons */
 QPushButton,
 QToolButton {
-    background-color: {{BG_Card}};
+    background-color: {{BG_Canvas}};
     border: 1px solid {{StrokeSoft}};
     border-radius: {{RadiusSM}};
     padding: 6px 12px;
@@ -91,7 +140,7 @@ QToolButton {
 
 QPushButton[variant="ghost"],
 QToolButton[variant="ghost"] {
-    background-color: transparent;
+    background-color: {{BG_Canvas}};
 }
 
 QPushButton:hover,
@@ -202,6 +251,34 @@ QPushButton[variant="reset"]:pressed {
     color: {{InkOnAccent}};
 }
 
+/* Dialogs */
+QMessageBox {
+    background-color: #ffffff;
+    font-family: "Segoe UI";
+}
+
+QMessageBox QLabel {
+    color: {{InkPrimary}};
+    font-family: "Segoe UI";
+}
+
+QMessageBox QPushButton {
+    background-color: #ffffff;
+    border: 1px solid {{StrokeSoft}};
+    border-radius: {{RadiusSM}};
+    padding: 6px 16px;
+    color: {{InkPrimary}};
+    font-family: "Segoe UI";
+}
+
+QMessageBox QPushButton:hover {
+    background-color: {{Hover}};
+}
+
+QMessageBox QPushButton:pressed {
+    background-color: {{StrokeSoft}};
+}
+
 QPushButton:disabled,
 QToolButton:disabled {
     color: rgba(34, 31, 27, 0.4);
@@ -261,6 +338,11 @@ QListView {
     border: none;
 }
 
+QListView#DeviceListView,
+QListView#CalibrationListView {
+    background: {{BG_Canvas}};
+}
+
 QListView::item {
     padding: 6px 8px;
 }
@@ -268,4 +350,9 @@ QListView::item {
 QListView::item:selected {
     background: {{Hover}};
     color: {{InkPrimary}};
+}
+
+QRubberBand {
+    background-color: {{BG_Canvas}};
+    border: 1px solid {{StrokeSoft}};
 }

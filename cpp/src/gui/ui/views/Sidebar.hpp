@@ -13,6 +13,7 @@ class QStringListModel;
 class QPushButton;
 class QDoubleSpinBox;
 class QSpinBox;
+class QToolButton;
 
 namespace ui::views {
 
@@ -32,6 +33,9 @@ public:
 
     void applyTranslations(const QHash<QString, QString>& strings);
     void applyLocale(const QLocale& locale);
+    void setSelectedDevice(int index);
+    void setSelectedCalibration(int index);
+    void setSweepControlsEnabled(bool startEnabled, bool stopEnabled, bool resetEnabled);
 
 signals:
     void startRequested();
@@ -41,6 +45,12 @@ signals:
     void pointsChanged(int points);
     void parameterToggled(const QString& name, bool on);
     void thresholdChanged(const QString& name, double value);
+    void vnaScanRequested();
+    void calibrationUploadRequested();
+    void deviceSelectionChanged(int index);
+    void deviceActivated(int index);
+    void calibrationSelectionChanged(int index);
+    void calibrationActivated(int index);
 
 private:
     void buildUi();
@@ -50,7 +60,6 @@ private:
 
     QString trKey(const QString& key, const QString& fallback) const;
     void setLabelText(const QString& key, QLabel* label, const QString& fallback);
-
     QListView* m_deviceList = nullptr;
     QListView* m_calibrationList = nullptr;
     QDoubleSpinBox* m_startSpin = nullptr;
@@ -62,6 +71,8 @@ private:
     QPushButton* m_startButton = nullptr;
     QPushButton* m_stopButton = nullptr;
     QPushButton* m_resetButton = nullptr;
+    QToolButton* m_vnaScanButton = nullptr;
+    QToolButton* m_calibrationUploadButton = nullptr;
 
     QHash<QString, QString> m_strings;
     QLocale m_locale;
@@ -71,6 +82,8 @@ private:
     QLabel* m_frequencyLabel = nullptr;
     QLabel* m_pointsLabel = nullptr;
     QLabel* m_parametersLabel = nullptr;
+    bool m_devicePlaceholderActive = false;
+    QString m_devicePlaceholderText;
 
     QStringListModel* m_deviceModel = nullptr;
     QStringListModel* m_calibrationModel = nullptr;

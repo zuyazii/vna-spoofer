@@ -3,6 +3,7 @@
 #include "../theme/DesignTokens.hpp"
 
 #include <QCheckBox>
+#include <QCursor>
 #include <QHBoxLayout>
 #include <QToolButton>
 
@@ -13,7 +14,7 @@ SeriesCheck::SeriesCheck(const QString& seriesName, QWidget* parent)
     , m_seriesName(seriesName)
     , m_color(Qt::black) {
     setAttribute(Qt::WA_StyledBackground, true);
-    setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
+    setSizePolicy(QSizePolicy::Minimum, QSizePolicy::Fixed);
     buildUi();
 }
 
@@ -45,22 +46,24 @@ QString SeriesCheck::seriesName() const {
 
 void SeriesCheck::buildUi() {
     auto* layout = new QHBoxLayout(this);
-    layout->setContentsMargins(8, 4, 8, 4);
-    layout->setSpacing(12);
+    layout->setContentsMargins(0, 2, 0, 2);
+    layout->setSpacing(6);
 
     m_check = new QCheckBox(m_seriesName, this);
-    m_check->setMinimumHeight(32);
+    m_check->setMinimumHeight(28);
     m_check->setObjectName(QStringLiteral("SeriesCheckBox"));
-    layout->addWidget(m_check, 1);
+    layout->addWidget(m_check);
 
     m_colorButton = new QToolButton(this);
     m_colorButton->setAccessibleName(tr("%1 Color").arg(m_seriesName));
     m_colorButton->setCheckable(false);
     m_colorButton->setAutoRaise(false);
-    m_colorButton->setFixedSize(32, 32);
+    m_colorButton->setFixedSize(24, 24);
     m_colorButton->setToolTip(tr("Adjust %1 color").arg(m_seriesName));
     m_colorButton->setProperty("variant", "ghost");
-    layout->addWidget(m_colorButton, 0);
+    m_colorButton->setCursor(Qt::PointingHandCursor);
+    layout->addWidget(m_colorButton);
+    layout->addStretch(1);
 
     updateIndicator();
 
@@ -79,6 +82,8 @@ void SeriesCheck::updateIndicator() {
         "border-radius: %1px;"
         "border: 1px solid %2;"
         "background-color: %3;"
+        "min-width: 24px;"
+        "min-height: 24px;"
         "}"
         "QToolButton:hover { background-color: %4; }")
                        .arg(ui::theme::Tokens::radius(ui::theme::Tokens::Radius::SM))

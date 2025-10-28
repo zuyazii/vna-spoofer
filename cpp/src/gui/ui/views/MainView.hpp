@@ -7,9 +7,18 @@
 #include "BottomPanel.hpp"
 #include "Sidebar.hpp"
 
+#include "librevna_headless/device_discovery.hpp"
+#include "librevna_headless/host_core.hpp"
+
 #include <QHash>
 #include <QLocale>
 #include <QWidget>
+
+#include <atomic>
+#include <filesystem>
+#include <optional>
+#include <thread>
+#include <vector>
 
 class QSplitter;
 class QToolButton;
@@ -22,6 +31,7 @@ class MainView : public QWidget {
 
 public:
     explicit MainView(QWidget* parent = nullptr);
+    ~MainView() override;
 
     void setSeriesColor(const QString& name, const QColor& color);
     void setSeriesVisible(const QString& name, bool visible);
@@ -39,12 +49,12 @@ signals:
     void rangeChanged(double startGHz, double endGHz);
     void pointsChanged(int points);
     void seriesToggled(const QString& name, bool on);
-    void seriesColorChanged(const QString& name, const QColor& color);
+    void seriesMagnitudeColorChanged(const QString& name, const QColor& color);
+    void seriesPhaseColorChanged(const QString& name, const QColor& color);
     void thresholdChanged(const QString& name, double value);
     void magnitudeShown(bool on);
     void phaseShown(bool on);
     void languageChanged(const QLocale& locale);
-    void presetsRequested();
 
 private:
     void buildUi();
@@ -56,6 +66,25 @@ private:
     void updateColorsUi();
     void toggleSidebarVisibility();
     void toggleBottomPanelVisibility();
+    void scanForDevices();
+    void handleDeviceSelection(int index);
+    void handleDeviceActivation(int index);
+    void connectToDevice(int index);
+    void handleCalibrationSelection(int index);
+    void handleCalibrationActivation(int index);
+    void loadCalibrationFromFile();
+    void applyCalibrationFromPath(const QString& path);
+    void refreshCalibrationList();
+    void ensureSweepThreadFinished();
+    void startSweep();
+    void stopSweep();
+    void resetSweepParameters();
+    void applySweepResults(const std::vector<librevna::headless::VNAMeasurement>& results);
+    std::filesystem::path findCalibrationDirectory() const;
+    QHash<QString, double> currentThresholds() const;
+    void updateSweepControlState(bool running);
+    void showInformation(const QString& title, const QString& message);
+    void showWarning(const QString& title, const QString& message);
 
     QHash<QString, QString> loadStrings(const QString& path) const;
     QString resolveLocaleKey(const QLocale& locale) const;
@@ -73,10 +102,28 @@ private:
     QSplitter* m_mainSplitter = nullptr;
     QToolButton* m_sidebarToggle = nullptr;
     QToolButton* m_bottomToggle = nullptr;
-    QToolButton* m_presetsButton = nullptr;
 
-    QHash<QString, bool> m_seriesVisibility;
-    QHash<QString, QColor> m_seriesColors;
+    QHash<QString, bool> m_seriesEnabled;
+    QHash<QString, bool> m_seriesMagnitudeState;
+    QHash<QString, bool> m_seriesPhaseState;
+    QHash<QString, QColor> m_seriesMagnitudeColors;
+    QHash<QString, QColor> m_seriesPhaseColors;
+    QHash<QString, double> m_thresholdValues;
+    double m_startFrequencyGHz = 1.0;
+    double m_stopFrequencyGHz = 6.0;
+    int m_pointCount = 201;
+
+    librevna::headless::HostCore m_hostCore;
+    std::vector<librevna::headless::DiscoveredDevice> m_discoveredDevices;
+    std::vector<std::filesystem::path> m_calibrationFiles;
+    int m_selectedDeviceIndex = -1;
+    int m_selectedCalibrationIndex = -1;
+    QString m_connectedSerial;
+    std::filesystem::path m_calibrationDirectory;
+    std::filesystem::path m_activeCalibrationPath;
+    std::thread m_sweepThread;
+    std::atomic<bool> m_cancelRequested{false};
+    std::atomic<bool> m_sweepInProgress{false};
 
     QLocale m_currentLocale{QLocale::English};
     QHash<QString, QString> m_baseStrings;

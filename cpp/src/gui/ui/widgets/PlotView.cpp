@@ -46,11 +46,25 @@ PlotView::PlotView(QWidget* parent)
 }
 
 void PlotView::setSeriesColor(const QString& name, const QColor& color) {
+    setSeriesMagnitudeColor(name, color);
+    setSeriesPhaseColor(name, color);
+}
+
+void PlotView::setSeriesMagnitudeColor(const QString& name, const QColor& color) {
     auto it = m_series.find(name);
     if (it == m_series.end()) {
         return;
     }
-    it->color = color;
+    it->magnitudeColor = color;
+    refreshSeriesPens(name);
+}
+
+void PlotView::setSeriesPhaseColor(const QString& name, const QColor& color) {
+    auto it = m_series.find(name);
+    if (it == m_series.end()) {
+        return;
+    }
+    it->phaseColor = color;
     refreshSeriesPens(name);
 }
 
@@ -59,7 +73,25 @@ void PlotView::setSeriesVisible(const QString& name, bool on) {
     if (it == m_series.end()) {
         return;
     }
-    it->visible = on;
+    it->enabled = on;
+    updateSeriesVisibility(name);
+}
+
+void PlotView::setSeriesMagnitudeVisible(const QString& name, bool on) {
+    auto it = m_series.find(name);
+    if (it == m_series.end()) {
+        return;
+    }
+    it->magnitudeVisible = on;
+    updateSeriesVisibility(name);
+}
+
+void PlotView::setSeriesPhaseVisible(const QString& name, bool on) {
+    auto it = m_series.find(name);
+    if (it == m_series.end()) {
+        return;
+    }
+    it->phaseVisible = on;
     updateSeriesVisibility(name);
 }
 
@@ -179,20 +211,23 @@ void PlotView::initializeSeries() {
 
     for (const auto& init : seriesInits) {
         SeriesSet set;
-        set.color = init.color;
-        set.visible = true;
+        set.magnitudeColor = init.color;
+        set.phaseColor = init.color;
+        set.enabled = true;
+        set.magnitudeVisible = true;
+        set.phaseVisible = true;
 
         set.magnitude = new QLineSeries(this);
         set.magnitude->setName(init.name + QStringLiteral(" | Magnitude"));
         set.magnitude->setUseOpenGL(false);
         set.magnitude->setPointsVisible(false);
-        set.magnitude->setPen(makePen(set.color, Qt::SolidLine));
+        set.magnitude->setPen(makePen(set.magnitudeColor, Qt::SolidLine));
 
         set.phase = new QLineSeries(this);
         set.phase->setName(init.name + QStringLiteral(" | Phase"));
         set.phase->setUseOpenGL(false);
         set.phase->setPointsVisible(false);
-        set.phase->setPen(makePen(set.color, Qt::DashLine));
+        set.phase->setPen(makePen(set.phaseColor, Qt::DashLine));
 
         chart()->addSeries(set.magnitude);
         chart()->addSeries(set.phase);
@@ -212,11 +247,13 @@ void PlotView::updateSeriesVisibility(const QString& name) {
     if (it == m_series.end()) {
         return;
     }
+    const bool magnitudeOn = it->enabled && it->magnitudeVisible && m_showMagnitude;
+    const bool phaseOn = it->enabled && it->phaseVisible && m_showPhase;
     if (it->magnitude) {
-        it->magnitude->setVisible(it->visible && m_showMagnitude);
+        it->magnitude->setVisible(magnitudeOn);
     }
     if (it->phase) {
-        it->phase->setVisible(it->visible && m_showPhase);
+        it->phase->setVisible(phaseOn);
     }
 }
 
@@ -251,13 +288,30 @@ void PlotView::refreshSeriesPens(const QString& name) {
         return;
     }
     if (it->magnitude) {
-        it->magnitude->setPen(makePen(it->color, Qt::SolidLine));
+        it->magnitude->setPen(makePen(it->magnitudeColor, Qt::SolidLine));
     }
     if (it->phase) {
-        it->phase->setPen(makePen(it->color, Qt::DashLine));
+        it->phase->setPen(makePen(it->phaseColor, Qt::DashLine));
     }
 }
 
+void PlotView::setFrequencyAxisRange(double minGHz, double maxGHz) {
+    if (m_axisFrequency) {
+        m_axisFrequency->setRange(minGHz, maxGHz);
+    }
+}
+
+void PlotView::setMagnitudeAxisRange(double minDb, double maxDb) {
+    if (m_axisMagnitude) {
+        m_axisMagnitude->setRange(minDb, maxDb);
+    }
+}
+
+void PlotView::setPhaseAxisRange(double minDeg, double maxDeg) {
+    if (m_axisPhase) {
+        m_axisPhase->setRange(minDeg, maxDeg);
+    }
+}
 void PlotView::clampFrequencyRange() {
     if (!m_axisFrequency) {
         return;
@@ -272,3 +326,4 @@ void PlotView::clampFrequencyRange() {
 }
 
 } // namespace ui::widgets
+
