@@ -5,6 +5,7 @@
 
 #include <QHash>
 #include <QLocale>
+#include <QStringList>
 #include <QWidget>
 
 class QListView;
@@ -57,7 +58,6 @@ private:
     void bindSignals();
     void updateSpinLocale();
     void updateSectionTitles();
-
     QString trKey(const QString& key, const QString& fallback) const;
     void setLabelText(const QString& key, QLabel* label, const QString& fallback);
     QListView* m_deviceList = nullptr;

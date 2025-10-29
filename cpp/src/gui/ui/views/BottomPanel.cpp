@@ -3,7 +3,9 @@
 #include <QCheckBox>
 #include <QHBoxLayout>
 #include <QLabel>
+#include <QSet>
 #include <QSignalBlocker>
+#include <QStyle>
 #include <QVBoxLayout>
 
 namespace ui::views {
@@ -62,6 +64,18 @@ void BottomPanel::setSeriesEnabled(const QHash<QString, bool>& enabled) {
                 }
             }
             check->setEnabled(on && m_phaseVisibleGlobal);
+        }
+        if (m_resultLabels.contains(it.key())) {
+            if (!on) {
+                setResultState(it.key(), ResultState::Disabled);
+            } else {
+                const ResultState state = m_resultStates.value(it.key(), ResultState::Pending);
+                if (state == ResultState::Disabled) {
+                    setResultState(it.key(), ResultState::Pending);
+                } else {
+                    applyResultState(it.key(), state);
+                }
+            }
         }
     }
     syncMagnitudeHeader();
@@ -140,13 +154,108 @@ void BottomPanel::setPhaseVisible(bool on) {
     }
 }
 
+void BottomPanel::setResultState(const QString& name, ResultState state) {
+    if (!m_resultLabels.contains(name)) {
+        return;
+    }
+    m_resultStates.insert(name, state);
+    applyResultState(name, state);
+}
+
+void BottomPanel::setResultStates(const QHash<QString, ResultState>& states) {
+    for (auto it = states.constBegin(); it != states.constEnd(); ++it) {
+        setResultState(it.key(), it.value());
+    }
+}
+
+void BottomPanel::resetResultStates(const QStringList& activeParameters) {
+    const bool filter = !activeParameters.isEmpty();
+    QSet<QString> active;
+    if (filter) {
+        active.reserve(activeParameters.size());
+        for (const QString& entry : activeParameters) {
+            active.insert(entry);
+        }
+    }
+    for (auto it = m_resultLabels.begin(); it != m_resultLabels.end(); ++it) {
+        const bool enabled = !filter || active.contains(it.key());
+        setResultState(it.key(), enabled ? ResultState::Pending : ResultState::Disabled);
+    }
+}
+
 void BottomPanel::applyTranslations(const QHash<QString, QString>& strings) {
     m_strings = strings;
     updateTexts();
+    refreshResultTexts();
 }
 
 void BottomPanel::applyLocale(const QLocale& locale) {
     m_locale = locale;
+}
+
+void BottomPanel::applyResultState(const QString& name, ResultState state) {
+    QLabel* label = m_resultLabels.value(name, nullptr);
+    if (!label) {
+        return;
+    }
+    label->setText(resultText(state));
+    label->setProperty("resultState", resultStateProperty(state));
+    if (label->style()) {
+        label->style()->unpolish(label);
+        label->style()->polish(label);
+    }
+    label->update();
+}
+
+QString BottomPanel::resultText(ResultState state) const {
+    QString key;
+    QString fallback;
+    switch (state) {
+    case ResultState::Passed:
+        key = QStringLiteral("pass");
+        fallback = tr("Passed");
+        break;
+    case ResultState::Failed:
+        key = QStringLiteral("fail");
+        fallback = tr("Failed");
+        break;
+    case ResultState::Disabled:
+        key = QStringLiteral("disabled");
+        fallback = tr("Disabled");
+        break;
+    case ResultState::NoData:
+        key = QStringLiteral("nodata");
+        fallback = tr("No Data");
+        break;
+    case ResultState::Pending:
+    default:
+        key = QStringLiteral("pending");
+        fallback = tr("Pending");
+        break;
+    }
+    return trKey(QStringLiteral("results.%1").arg(key), fallback);
+}
+
+QString BottomPanel::resultStateProperty(ResultState state) const {
+    switch (state) {
+    case ResultState::Passed:
+        return QStringLiteral("passed");
+    case ResultState::Failed:
+        return QStringLiteral("failed");
+    case ResultState::Disabled:
+        return QStringLiteral("disabled");
+    case ResultState::NoData:
+        return QStringLiteral("nodata");
+    case ResultState::Pending:
+    default:
+        return QStringLiteral("pending");
+    }
+}
+
+void BottomPanel::refreshResultTexts() {
+    for (auto it = m_resultStates.constBegin(); it != m_resultStates.constEnd(); ++it) {
+        applyResultState(it.key(), it.value());
+    }
 }
 
 void BottomPanel::buildUi() {
@@ -185,6 +294,39 @@ void BottomPanel::buildUi() {
         check->setProperty("role", "subtitle");
     }
     languageLayout->addStretch(1);
+
+    QWidget* resultsWidget = nullptr;
+    QVBoxLayout* resultsLayout = createColumn(&resultsWidget, 200);
+    m_resultsLabel = new QLabel(tr("Results"), resultsWidget);
+    m_resultsLabel->setProperty("role", "subtitle");
+    resultsLayout->addWidget(m_resultsLabel);
+
+    for (const QString& name : kSeriesOrder) {
+        auto* row = new QWidget(resultsWidget);
+        auto* rowLayout = new QHBoxLayout(row);
+        rowLayout->setContentsMargins(0, 0, 0, 0);
+        rowLayout->setSpacing(6);
+
+        auto* nameLabel = new QLabel(name, row);
+        nameLabel->setMinimumWidth(32);
+        rowLayout->addWidget(nameLabel);
+        rowLayout->addSpacing(6);
+
+        auto* badge = new QLabel(tr("Pending"), row);
+        badge->setAlignment(Qt::AlignCenter);
+        badge->setMinimumHeight(24);
+        badge->setMinimumWidth(76);
+        badge->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
+        badge->setProperty("role", "resultBadge");
+        badge->setProperty("resultState", QStringLiteral("pending"));
+        rowLayout->addWidget(badge);
+
+        resultsLayout->addWidget(row);
+        m_resultLabels.insert(name, badge);
+        m_resultStates.insert(name, ResultState::Pending);
+        applyResultState(name, ResultState::Pending);
+    }
+    resultsLayout->addStretch(1);
 
     QWidget* magnitudeWidget = nullptr;
     QVBoxLayout* magnitudeLayout = createColumn(&magnitudeWidget, 200);
@@ -344,6 +486,9 @@ void BottomPanel::bindSignals() {
 void BottomPanel::updateTexts() {
     if (m_languageLabel) {
         m_languageLabel->setText(trKey(QStringLiteral("panel.language"), tr("Language")));
+    }
+    if (m_resultsLabel) {
+        m_resultsLabel->setText(trKey(QStringLiteral("panel.results"), tr("Results")));
     }
     if (m_magnitudeHeader) {
         m_magnitudeHeader->setText(trKey(QStringLiteral("panel.magnitude"), tr("Magnitude")));

@@ -49,7 +49,8 @@ QSplitter::handle:vertical {
     width: 1px;
 }
 
-QLabel[role="subtitle"] {
+QLabel[role="subtitle"],
+QCheckBox[role="subtitle"] {
     color: {{InkPrimary}};
     font-size: {{Font::LG}}pt;
     font-weight: 600;
@@ -423,6 +424,47 @@ QLabel[role="caption"] {
     color: {{InkMuted}};
     font-size: {{Font::XS}}pt;
     text-transform: lowercase;
+}
+
+QLabel[role="resultBadge"] {
+    border-radius: {{RadiusSM}};
+    padding: 4px 12px;
+    font-size: {{Font::XS}}pt;
+    font-weight: 600;
+    min-height: 24px;
+    border: 1px solid {{ResultPendingBorder}};
+    background-color: {{ResultPendingBg}};
+    color: {{ResultPendingText}};
+}
+
+QLabel[role="resultBadge"][resultState="passed"] {
+    background-color: {{ResultPassBg}};
+    border-color: {{ResultPassBorder}};
+    color: {{ResultPassText}};
+}
+
+QLabel[role="resultBadge"][resultState="failed"] {
+    background-color: {{ResultFailBg}};
+    border-color: {{ResultFailBorder}};
+    color: {{ResultFailText}};
+}
+
+QLabel[role="resultBadge"][resultState="disabled"] {
+    background-color: {{ResultDisabledBg}};
+    border-color: {{ResultDisabledBorder}};
+    color: {{ResultDisabledText}};
+}
+
+QLabel[role="resultBadge"][resultState="nodata"] {
+    background-color: {{ResultPendingBg}};
+    border-color: {{ResultPendingBorder}};
+    color: {{ResultPendingText}};
+}
+
+QLabel[role="resultBadge"][resultState="pending"] {
+    background-color: {{ResultPendingBg}};
+    border-color: {{ResultPendingBorder}};
+    color: {{ResultPendingText}};
 }
 
 QListView {

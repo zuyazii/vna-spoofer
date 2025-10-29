@@ -8,6 +8,7 @@
 #include <QHash>
 #include <QLocale>
 #include <QWidget>
+#include <QStringList>
 
 class QComboBox;
 class QLabel;
@@ -28,6 +29,16 @@ public:
                          const QHash<QString, QColor>& phaseColors);
     void setMagnitudeVisible(bool on);
     void setPhaseVisible(bool on);
+    enum class ResultState {
+        Pending,
+        Passed,
+        Failed,
+        Disabled,
+        NoData
+    };
+    void setResultState(const QString& name, ResultState state);
+    void setResultStates(const QHash<QString, ResultState>& states);
+    void resetResultStates(const QStringList& activeParameters);
 
     void applyTranslations(const QHash<QString, QString>& strings);
     void applyLocale(const QLocale& locale);
@@ -50,13 +61,20 @@ private:
     void setLanguageSelection(const QString& key);
     void syncMagnitudeHeader();
     void syncPhaseHeader();
+    void applyResultState(const QString& name, ResultState state);
+    QString resultText(ResultState state) const;
+    QString resultStateProperty(ResultState state) const;
+    void refreshResultTexts();
 
     QLabel* m_languageLabel = nullptr;
+    QLabel* m_resultsLabel = nullptr;
     QHash<QString, QCheckBox*> m_languageChecks;
     QCheckBox* m_magnitudeHeader = nullptr;
     QCheckBox* m_phaseHeader = nullptr;
     QHash<QString, widgets::SeriesCheck*> m_magnitudeChecks;
     QHash<QString, widgets::SeriesCheck*> m_phaseChecks;
+    QHash<QString, QLabel*> m_resultLabels;
+    QHash<QString, ResultState> m_resultStates;
 
     QHash<QString, QString> m_strings;
     QLocale m_locale;

@@ -193,7 +193,19 @@ QString ThemeLoader::applyTokens(const QString& tmpl) {
         {QStringLiteral("{{RadiusXS}}"), QString::number(radius(Radius::XS))},
         {QStringLiteral("{{RadiusSM}}"), QString::number(radius(Radius::SM))},
         {QStringLiteral("{{RadiusMD}}"), QString::number(radius(Radius::MD))},
-        {QStringLiteral("{{RadiusLG}}"), QString::number(radius(Radius::LG))}
+        {QStringLiteral("{{RadiusLG}}"), QString::number(radius(Radius::LG))},
+        {QStringLiteral("{{ResultPassBg}}"), QString::fromUtf8(ResultPassBg)},
+        {QStringLiteral("{{ResultPassBorder}}"), QString::fromUtf8(ResultPassBorder)},
+        {QStringLiteral("{{ResultPassText}}"), QString::fromUtf8(ResultPassText)},
+        {QStringLiteral("{{ResultFailBg}}"), QString::fromUtf8(ResultFailBg)},
+        {QStringLiteral("{{ResultFailBorder}}"), QString::fromUtf8(ResultFailBorder)},
+        {QStringLiteral("{{ResultFailText}}"), QString::fromUtf8(ResultFailText)},
+        {QStringLiteral("{{ResultDisabledBg}}"), QString::fromUtf8(ResultDisabledBg)},
+        {QStringLiteral("{{ResultDisabledBorder}}"), QString::fromUtf8(ResultDisabledBorder)},
+        {QStringLiteral("{{ResultDisabledText}}"), QString::fromUtf8(ResultDisabledText)},
+        {QStringLiteral("{{ResultPendingBg}}"), QString::fromUtf8(ResultPendingBg)},
+        {QStringLiteral("{{ResultPendingBorder}}"), QString::fromUtf8(ResultPendingBorder)},
+        {QStringLiteral("{{ResultPendingText}}"), QString::fromUtf8(ResultPendingText)}
     };
 
     QString out = tmpl;

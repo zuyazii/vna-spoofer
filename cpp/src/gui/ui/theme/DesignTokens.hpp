@@ -20,6 +20,18 @@ inline constexpr auto AccentStart = "#423C38";
 inline constexpr auto AccentStop = "#B95C5C";
 inline constexpr auto AccentResetBorder = "#635C56";
 inline constexpr auto InkOnAccent = "#E0D8D1";
+inline constexpr auto ResultPassBg = "#C8F7A6";
+inline constexpr auto ResultPassBorder = "#7DD45A";
+inline constexpr auto ResultPassText = "#1F4F1C";
+inline constexpr auto ResultFailBg = "#F9B0B0";
+inline constexpr auto ResultFailBorder = "#E26C6C";
+inline constexpr auto ResultFailText = "#611B1B";
+inline constexpr auto ResultDisabledBg = "#E2DFDC";
+inline constexpr auto ResultDisabledBorder = "#CAC2BC";
+inline constexpr auto ResultDisabledText = "#6B655F";
+inline constexpr auto ResultPendingBg = "#DED6CD";
+inline constexpr auto ResultPendingBorder = "#CABEB4";
+inline constexpr auto ResultPendingText = "#6B655F";
 
 // Series colors
 inline constexpr auto S11 = "#E2554E";

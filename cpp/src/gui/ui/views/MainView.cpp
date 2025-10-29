@@ -448,7 +448,10 @@ void MainView::initSeriesState() {
     updateVisibilityUi();
     updateColorsUi();
     updateSweepControlState(false);
-}void MainView::applyLocale(const QLocale& locale) {
+    m_bottomPanel->resetResultStates(kSeriesNames);
+}
+
+void MainView::applyLocale(const QLocale& locale) {
     QLocale::setDefault(locale);
     m_sidebar->applyLocale(locale);
     m_bottomPanel->applyLocale(locale);
@@ -876,6 +879,24 @@ void MainView::startSweep() {
     m_cancelRequested = false;
     m_sweepInProgress = true;
     updateSweepControlState(true);
+    {
+        QHash<QString, BottomPanel::ResultState> initialStates;
+        QSet<QString> activeSet;
+        if (!parameters.isEmpty()) {
+            activeSet.reserve(parameters.size());
+            for (const QString& entry : parameters) {
+                activeSet.insert(entry);
+            }
+        }
+        const bool filter = !parameters.isEmpty();
+        for (const QString& name : kSeriesNames) {
+            const bool enabled = !filter || activeSet.contains(name);
+            initialStates.insert(name,
+                                 enabled ? BottomPanel::ResultState::Pending
+                                         : BottomPanel::ResultState::Disabled);
+        }
+        m_bottomPanel->setResultStates(initialStates);
+    }
 
     m_sweepThread = std::thread([this,
                                  configuration,
@@ -924,11 +945,40 @@ void MainView::startSweep() {
                     const QString message = lastError.empty()
                                                 ? tr("No data returned from the sweep.")
                                                 : QString::fromStdString(lastError);
+                    m_bottomPanel->resetResultStates(selectedParameters);
                     showWarning(tr("Sweep"), message);
                     return;
                 }
 
                 applySweepResults(results);
+                {
+                    QHash<QString, BottomPanel::ResultState> finalStates;
+                    const bool filter = !selectedParameters.isEmpty();
+                    QSet<QString> activeSet;
+                    if (!selectedParameters.isEmpty()) {
+                        activeSet.reserve(selectedParameters.size());
+                        for (const QString& entry : selectedParameters) {
+                            activeSet.insert(entry);
+                        }
+                    }
+                    for (const QString& name : kSeriesNames) {
+                        if (filter && !activeSet.contains(name)) {
+                            finalStates.insert(name, BottomPanel::ResultState::Disabled);
+                            continue;
+                        }
+                        const auto outcomeIt = std::find_if(
+                            summary.outcomes.cbegin(), summary.outcomes.cend(),
+                            [&name](const ParameterOutcome& outcome) { return outcome.name == name; });
+                        if (outcomeIt == summary.outcomes.cend() || !outcomeIt->hasData) {
+                            finalStates.insert(name, BottomPanel::ResultState::NoData);
+                        } else if (outcomeIt->pass) {
+                            finalStates.insert(name, BottomPanel::ResultState::Passed);
+                        } else {
+                            finalStates.insert(name, BottomPanel::ResultState::Failed);
+                        }
+                    }
+                    m_bottomPanel->setResultStates(finalStates);
+                }
 
                 const QString pointsText =
                     locale.toString(static_cast<qulonglong>(resultCount));
@@ -1009,6 +1059,7 @@ void MainView::resetSweepParameters() {
         m_thresholdValues.insert(name, kDefaultThresholdDb);
     }
     m_sidebar->setThresholds(defaults);
+    m_bottomPanel->resetResultStates(kSeriesNames);
 
     for (const QString& name : kSeriesNames) {
         m_plot->setSeriesData(name, {}, {});

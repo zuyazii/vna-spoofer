@@ -34,10 +34,6 @@ constexpr double kThresholdMax = 20.0;
 
 constexpr int kSectionSpacing = 36;
 
-QString formatKey(const QString& base, const QString& entry) {
-    return base + QStringLiteral(".") + entry;
-}
-
 } // namespace
 
 Sidebar::Sidebar(QWidget* parent)
@@ -466,6 +462,7 @@ void Sidebar::buildUi() {
         spin->setMinimumHeight(32);
         spin->setProperty("paramName", param);
         thresholdRow->addWidget(spin);
+
         cellLayout->addLayout(thresholdRow);
 
         auto* caption = new QLabel(tr("threshold"), cell);
