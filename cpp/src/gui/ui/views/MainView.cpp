@@ -17,6 +17,8 @@
 #include <QMetaObject>
 #include <limits>
 #include <cmath>
+#include <chrono>
+#include <ctime>
 #include <QSplitter>
 #include <QToolButton>
 #include <QScrollArea>
@@ -29,12 +31,21 @@
 #include <algorithm>
 #include <numeric>
 #include <array>
+#include <fstream>
+#include <iomanip>
 #include <map>
+#include <set>
+#include <sstream>
+#include <unordered_set>
 #include <vector>
 #include <utility>
 #include <filesystem>
 
+#include <nlohmann/json.hpp>
+
 namespace ui::views {
+
+namespace fs = std::filesystem;
 
 namespace {
 
@@ -46,10 +57,11 @@ const QStringList kSeriesNames = {
 };
 
 constexpr double kDefaultThresholdDb = -20.0;
+constexpr double kFloorMagnitudeDb = -300.0;
 
 struct ParameterOutcome {
     QString name;
-    double worstDb = -300.0;
+    double worstDb = kFloorMagnitudeDb;
     double failFrequencyHz = 0.0;
     bool pass = true;
     double thresholdDb = kDefaultThresholdDb;
@@ -136,7 +148,8 @@ SweepEvaluationSummary computeSweepSummary(
             outcome.hasData = true;
             const std::complex<double> value = valueIt->second;
             const double magnitude = std::abs(value);
-            const double magnitudeDb = magnitude <= 0.0 ? -300.0 : 20.0 * std::log10(magnitude);
+            const double magnitudeDb =
+                magnitude <= 0.0 ? kFloorMagnitudeDb : 20.0 * std::log10(magnitude);
 
             if (magnitudeDb > outcome.worstDb) {
                 outcome.worstDb = magnitudeDb;
@@ -153,6 +166,306 @@ SweepEvaluationSummary computeSweepSummary(
     return summary;
 }
 
+fs::path ensureCalibrationStorageRoot() {
+    try {
+        const fs::path appDir =
+            fs::path(QCoreApplication::applicationDirPath().toStdString());
+        if (appDir.empty()) {
+            return {};
+        }
+        const fs::path calibrationDir = appDir / "Calibration";
+        std::error_code ec;
+        fs::create_directories(calibrationDir, ec);
+        if (ec && !fs::exists(calibrationDir)) {
+            return {};
+        }
+        const auto canonical = fs::weakly_canonical(calibrationDir, ec);
+        return ec ? calibrationDir : canonical;
+    } catch (...) {
+        return {};
+    }
+}
+
+fs::path ensureLogsStorageRoot() {
+    try {
+        const fs::path appDir =
+            fs::path(QCoreApplication::applicationDirPath().toStdString());
+        if (appDir.empty()) {
+            return {};
+        }
+        const fs::path logsDir = appDir / "Logs";
+        std::error_code ec;
+        fs::create_directories(logsDir, ec);
+        if (ec && !fs::exists(logsDir)) {
+            return {};
+        }
+        const auto canonical = fs::weakly_canonical(logsDir, ec);
+        return ec ? logsDir : canonical;
+    } catch (...) {
+        return {};
+    }
+}
+
+std::string makeSweepTimestamp() {
+    const auto now = std::chrono::system_clock::now();
+    const std::time_t tt = std::chrono::system_clock::to_time_t(now);
+    std::tm local{};
+#if defined(_WIN32)
+    localtime_s(&local, &tt);
+#else
+    localtime_r(&tt, &local);
+#endif
+    std::ostringstream oss;
+    oss << std::put_time(&local, "%Y%m%d_%H%M%S");
+    return oss.str();
+}
+
+struct SweepArtifactSaveResult {
+    bool success = false;
+    fs::path directory;
+    std::string error;
+};
+
+std::vector<std::string> orderedParameterNames(
+    const std::vector<librevna::headless::VNAMeasurement>& results) {
+    std::vector<std::string> ordered;
+    ordered.reserve(kSeriesNames.size());
+    std::unordered_set<std::string> seen;
+    for (const QString& entry : kSeriesNames) {
+        const std::string key = entry.toStdString();
+        ordered.push_back(key);
+        seen.insert(key);
+    }
+
+    std::set<std::string> extras;
+    for (const auto& measurement : results) {
+        for (const auto& param : measurement.parameters) {
+            if (seen.insert(param.first).second) {
+                extras.insert(param.first);
+            }
+        }
+    }
+    ordered.insert(ordered.end(), extras.begin(), extras.end());
+    return ordered;
+}
+
+nlohmann::json buildSweepPayload(
+    const librevna::headless::SweepConfiguration& configuration,
+    const SweepEvaluationSummary& summary,
+    const std::vector<librevna::headless::VNAMeasurement>& results,
+    const std::string& timestamp) {
+    nlohmann::json payload;
+    payload["timestamp"] = timestamp;
+    payload["configuration"] = {
+        {"start_frequency_hz", configuration.start_frequency_hz},
+        {"stop_frequency_hz", configuration.stop_frequency_hz},
+        {"points", configuration.points},
+        {"if_bandwidth_hz", configuration.if_bandwidth_hz},
+        {"power_dbm", configuration.power_dbm},
+        {"timeout_ms", configuration.timeout_ms},
+        {"excited_ports", configuration.excited_ports}};
+
+    nlohmann::json summaryJson;
+    summaryJson["overall_pass"] = summary.overallPass;
+    nlohmann::json parameters = nlohmann::json::array();
+    for (const ParameterOutcome& outcome : summary.outcomes) {
+        nlohmann::json entry;
+        entry["name"] = outcome.name.toStdString();
+        entry["pass"] = outcome.pass;
+        entry["has_data"] = outcome.hasData;
+        entry["threshold_db"] = outcome.thresholdDb;
+        if (outcome.hasData) {
+            entry["worst_db"] = outcome.worstDb;
+            entry["fail_frequency_hz"] = outcome.failFrequencyHz;
+        } else {
+            entry["worst_db"] = nullptr;
+            entry["fail_frequency_hz"] = nullptr;
+        }
+        parameters.push_back(std::move(entry));
+    }
+    summaryJson["parameters"] = std::move(parameters);
+    payload["summary"] = std::move(summaryJson);
+
+    const double kRadToDeg = 180.0 / std::acos(-1.0);
+    nlohmann::json trace = nlohmann::json::array();
+    for (const auto& measurement : results) {
+        nlohmann::json entry;
+        entry["frequency_hz"] = measurement.frequency;
+        nlohmann::json paramsJson = nlohmann::json::object();
+        for (const auto& param : measurement.parameters) {
+            const std::complex<double> value = param.second;
+            const double magnitude = std::abs(value);
+            const double magnitudeDb =
+                magnitude <= 0.0 ? kFloorMagnitudeDb : 20.0 * std::log10(magnitude);
+            const double phaseDeg = std::atan2(value.imag(), value.real()) * kRadToDeg;
+            paramsJson[param.first] = {
+                {"real", value.real()},
+                {"imag", value.imag()},
+                {"magnitude_db", magnitudeDb},
+                {"phase_deg", phaseDeg}};
+        }
+        entry["parameters"] = std::move(paramsJson);
+        trace.push_back(std::move(entry));
+    }
+    payload["trace"] = std::move(trace);
+    return payload;
+}
+
+bool writeJsonFile(const fs::path& path, const nlohmann::json& payload, std::string& error) {
+    std::ofstream stream(path, std::ios::binary | std::ios::trunc);
+    if (!stream) {
+        error = "Failed to open JSON file: " + path.string();
+        return false;
+    }
+    stream << payload.dump(2);
+    if (!stream.good()) {
+        error = "Failed to finish writing JSON file: " + path.string();
+        return false;
+    }
+    return true;
+}
+
+bool writeCsvFile(const fs::path& path,
+                  const std::vector<librevna::headless::VNAMeasurement>& results,
+                  const std::vector<std::string>& orderedNames,
+                  std::string& error) {
+    std::ofstream stream(path, std::ios::binary | std::ios::trunc);
+    if (!stream) {
+        error = "Failed to open CSV file: " + path.string();
+        return false;
+    }
+
+    stream << "Frequency (Hz)";
+    for (const auto& name : orderedNames) {
+        stream << ',' << name << "_Real";
+        stream << ',' << name << "_Imag";
+        stream << ',' << name << "_Magnitude_dB";
+        stream << ',' << name << "_Phase_deg";
+    }
+    stream << '\n';
+
+    const double kRadToDeg = 180.0 / std::acos(-1.0);
+    stream.setf(std::ios::fixed, std::ios::floatfield);
+    stream << std::setprecision(6);
+    for (const auto& measurement : results) {
+        stream << measurement.frequency;
+        for (const auto& name : orderedNames) {
+            const auto it = measurement.parameters.find(name);
+            if (it == measurement.parameters.end()) {
+                stream << ",,,,"; // Empty columns for missing parameter data.
+                continue;
+            }
+            const std::complex<double> value = it->second;
+            const double magnitude = std::abs(value);
+            const double magnitudeDb =
+                magnitude <= 0.0 ? kFloorMagnitudeDb : 20.0 * std::log10(magnitude);
+            const double phaseDeg = std::atan2(value.imag(), value.real()) * kRadToDeg;
+            stream << ',' << value.real();
+            stream << ',' << value.imag();
+            stream << ',' << magnitudeDb;
+            stream << ',' << phaseDeg;
+        }
+        stream << '\n';
+    }
+
+    if (!stream.good()) {
+        error = "Failed to finish writing CSV file: " + path.string();
+        return false;
+    }
+    return true;
+}
+
+SweepArtifactSaveResult persistSweepArtifacts(
+    const librevna::headless::SweepConfiguration& configuration,
+    const SweepEvaluationSummary& summary,
+    const std::vector<librevna::headless::VNAMeasurement>& results) {
+    SweepArtifactSaveResult outcome;
+    if (results.empty()) {
+        outcome.error = "No sweep samples were captured.";
+        return outcome;
+    }
+
+    const fs::path logsRoot = ensureLogsStorageRoot();
+    if (logsRoot.empty()) {
+        outcome.error = "Unable to locate or create the Logs folder near the build output.";
+        return outcome;
+    }
+
+    const std::string timestamp = makeSweepTimestamp();
+    const fs::path sweepDir = logsRoot / ("sweep_" + timestamp);
+    std::error_code ec;
+    fs::create_directories(sweepDir, ec);
+    if (ec) {
+        outcome.error =
+            "Failed to create sweep directory '" + sweepDir.string() + "': " + ec.message();
+        return outcome;
+    }
+
+    const auto payload = buildSweepPayload(configuration, summary, results, timestamp);
+    const auto parameterNames = orderedParameterNames(results);
+    std::string error;
+    if (!writeJsonFile(sweepDir / "sweep.json", payload, error)) {
+        outcome.error = std::move(error);
+        return outcome;
+    }
+    if (!writeCsvFile(sweepDir / "sweep.csv", results, parameterNames, error)) {
+        outcome.error = std::move(error);
+        return outcome;
+    }
+
+    outcome.success = true;
+    outcome.directory = sweepDir;
+    return outcome;
+}
+
+struct CalibrationPlacementResult {
+    fs::path path;
+    bool storedInManagedDirectory = false;
+    std::string warning;
+};
+
+CalibrationPlacementResult storeCalibrationFileInManagedDirectory(const fs::path& sourcePath) {
+    CalibrationPlacementResult result;
+    result.path = sourcePath;
+    if (sourcePath.empty() || !fs::exists(sourcePath)) {
+        result.warning = "Calibration file does not exist.";
+        return result;
+    }
+
+    const fs::path storageRoot = ensureCalibrationStorageRoot();
+    if (storageRoot.empty()) {
+        result.warning = "Unable to access the Calibration folder for storing files.";
+        return result;
+    }
+
+    std::error_code eq;
+    if (fs::equivalent(sourcePath.parent_path(), storageRoot, eq) && !eq) {
+        result.storedInManagedDirectory = true;
+        result.path = sourcePath;
+        return result;
+    }
+
+    fs::path destination = storageRoot / sourcePath.filename();
+    if (fs::exists(destination)) {
+        const std::string timestamp = makeSweepTimestamp();
+        const std::string uniqueName =
+            sourcePath.stem().string() + "_" + timestamp + sourcePath.extension().string();
+        destination = storageRoot / uniqueName;
+    }
+
+    std::error_code copyError;
+    fs::copy_file(sourcePath, destination, fs::copy_options::overwrite_existing, copyError);
+    if (copyError) {
+        result.warning =
+            "Failed to copy calibration file into Calibration folder: " + copyError.message();
+        return result;
+    }
+
+    result.path = destination;
+    result.storedInManagedDirectory = true;
+    return result;
+}
+
 QToolButton* makeGhostButton(const QString& text, QWidget* parent) {
     auto* button = new QToolButton(parent);
     button->setText(text);
@@ -165,8 +478,6 @@ QToolButton* makeGhostButton(const QString& text, QWidget* parent) {
 }
 
 } // namespace
-
-namespace fs = std::filesystem;
 
 MainView::MainView(QWidget* parent)
     : QWidget(parent) {
@@ -743,15 +1054,23 @@ void MainView::applyCalibrationFromPath(const QString& path) {
         return;
     }
 
-    if (!m_hostCore.load_calibration(calPath)) {
+    const auto placement = storeCalibrationFileInManagedDirectory(calPath);
+    fs::path pathToLoad = placement.path.empty() ? calPath : placement.path;
+    if (!placement.warning.empty()) {
+        showWarning(tr("Calibration Storage"),
+                    tr("The calibration file could not be cached for reuse.\n%1")
+                        .arg(QString::fromStdString(placement.warning)));
+    }
+
+    if (!m_hostCore.load_calibration(pathToLoad)) {
         const QString message = QString::fromStdString(m_hostCore.last_error_message());
         showWarning(tr("Calibration Failed"),
                     tr("Unable to load calibration file.\n%1").arg(message));
         return;
     }
 
-    m_activeCalibrationPath = calPath;
-    const fs::path parent = calPath.parent_path();
+    m_activeCalibrationPath = pathToLoad;
+    const fs::path parent = pathToLoad.parent_path();
     if (!parent.empty() && fs::exists(parent) && fs::is_directory(parent)) {
         std::error_code ec;
         const auto canonicalParent = fs::weakly_canonical(parent, ec);
@@ -759,7 +1078,9 @@ void MainView::applyCalibrationFromPath(const QString& path) {
     }
 
     refreshCalibrationList();
-    showInformation(tr("Calibration Loaded"), QDir::toNativeSeparators(path));
+    const QString storedPath =
+        QDir::toNativeSeparators(QString::fromStdString(pathToLoad.u8string()));
+    showInformation(tr("Calibration Loaded"), storedPath);
 }
 
 void MainView::refreshCalibrationList() {
@@ -1013,6 +1334,20 @@ void MainView::startSweep() {
                     message.append(lines.join(QLatin1Char('\n')));
                 }
 
+                const auto storageResult = persistSweepArtifacts(configuration, summary, results);
+                if (storageResult.success && !storageResult.directory.empty()) {
+                    message.append(QLatin1String("\n\n"));
+                    message.append(
+                        tr("Sweep data saved to %1.")
+                            .arg(QDir::toNativeSeparators(
+                                QString::fromStdString(storageResult.directory.u8string()))));
+                } else if (!storageResult.error.empty()) {
+                    message.append(QLatin1String("\n\n"));
+                    message.append(
+                        tr("Failed to store sweep data: %1")
+                            .arg(QString::fromStdString(storageResult.error)));
+                }
+
                 if (summary.overallPass) {
                     showInformation(tr("Sweep Complete"), message);
                 } else {
@@ -1096,7 +1431,8 @@ void MainView::applySweepResults(const std::vector<librevna::headless::VNAMeasur
             const QString key = QString::fromStdString(entry.first);
             const std::complex<double> value = entry.second;
             const double magnitude = std::abs(value);
-            const double magnitudeDb = magnitude <= 0.0 ? -300.0 : 20.0 * std::log10(magnitude);
+            const double magnitudeDb =
+                magnitude <= 0.0 ? kFloorMagnitudeDb : 20.0 * std::log10(magnitude);
             const double phaseDeg = std::atan2(value.imag(), value.real()) * kRadToDeg;
 
             auto& magVec = magnitudePoints[key];
@@ -1131,16 +1467,22 @@ void MainView::applySweepResults(const std::vector<librevna::headless::VNAMeasur
 }
 
 std::filesystem::path MainView::findCalibrationDirectory() const {
+    if (const fs::path preferred = ensureCalibrationStorageRoot(); !preferred.empty()) {
+        return preferred;
+    }
+
     std::vector<fs::path> candidates;
 
     try {
         const fs::path appDir = fs::path(QCoreApplication::applicationDirPath().toStdString());
+        candidates.push_back(appDir / "Calibration");
         candidates.push_back(appDir / "calibration");
         candidates.push_back(appDir.parent_path() / "calibration");
     } catch (...) {
         // Ignore failures retrieving application directory.
     }
 
+    candidates.push_back(fs::current_path() / "Calibration");
     candidates.push_back(fs::current_path() / "calibration");
 
     for (const auto& candidate : candidates) {
