@@ -426,6 +426,13 @@ QLabel[role="caption"] {
     text-transform: lowercase;
 }
 
+QLabel[role="frequencyCaption"] {
+    color: {{InkMuted}};
+    font-size: {{Font::XS}}pt;
+    text-transform: lowercase;
+    letter-spacing: 0.5px;
+}
+
 QLabel[role="resultBadge"] {
     border-radius: {{RadiusSM}};
     padding: 4px 12px;

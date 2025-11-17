@@ -1,4 +1,4 @@
-{
+﻿{
   "sidebar.vna": "網路分析儀",
   "sidebar.calibration": "校準",
   "sidebar.frequency": "頻率範圍",
@@ -22,7 +22,7 @@
   "panel.toggleBottom": "顯示/隱藏下方面板",
   "plot.axis.frequency": "頻率 (GHz)",
   "plot.axis.magnitude": "幅度 (dB)",
-  "plot.axis.phase": "相位 (deg)",
+  "plot.axis.phase": "相位 (度)",
   "plot.presets": "預設",
   "results.pass": "通過",
   "results.fail": "未通過",

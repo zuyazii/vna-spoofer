@@ -8,13 +8,19 @@
 #include <QStringList>
 #include <QWidget>
 
+#include <vector>
+
 class QListView;
+class QBoxLayout;
+class QVBoxLayout;
 class QLabel;
+class QGridLayout;
 class QStringListModel;
 class QPushButton;
 class QDoubleSpinBox;
 class QSpinBox;
 class QToolButton;
+class QResizeEvent;
 
 namespace ui::views {
 
@@ -38,6 +44,9 @@ public:
     void setSelectedCalibration(int index);
     void setSweepControlsEnabled(bool startEnabled, bool stopEnabled, bool resetEnabled);
 
+protected:
+    void resizeEvent(QResizeEvent* event) override;
+
 signals:
     void startRequested();
     void stopRequested();
@@ -58,8 +67,22 @@ private:
     void bindSignals();
     void updateSpinLocale();
     void updateSectionTitles();
+    void updateFrequencyLayoutMode(int availableWidth);
+    void updateParameterLayoutMode(int availableWidth);
+    void updateParameterButtonSizing(int availableWidth);
     QString trKey(const QString& key, const QString& fallback) const;
     void setLabelText(const QString& key, QLabel* label, const QString& fallback);
+
+    struct ParameterRow {
+        QWidget* container = nullptr;
+        QBoxLayout* controlLayout = nullptr;
+        QWidget* inputContainer = nullptr;
+        QVBoxLayout* inputLayout = nullptr;
+        QPushButton* button = nullptr;
+        QDoubleSpinBox* spin = nullptr;
+        QLabel* caption = nullptr;
+    };
+
     QListView* m_deviceList = nullptr;
     QListView* m_calibrationList = nullptr;
     QDoubleSpinBox* m_startSpin = nullptr;
@@ -82,6 +105,22 @@ private:
     QLabel* m_frequencyLabel = nullptr;
     QLabel* m_pointsLabel = nullptr;
     QLabel* m_parametersLabel = nullptr;
+    QWidget* m_startFrequencyField = nullptr;
+    QWidget* m_endFrequencyField = nullptr;
+    QLabel* m_startFrequencyLabel = nullptr;
+    QLabel* m_endFrequencyLabel = nullptr;
+    QLabel* m_frequencyDash = nullptr;
+    QBoxLayout* m_frequencyLayout = nullptr;
+    bool m_frequencyStacked = false;
+    int m_frequencyWrapThreshold = 0;
+    bool m_paramButtonsCompact = false;
+    int m_paramCompactThreshold = 0;
+    int m_paramButtonTallHeight = 64;
+    int m_paramButtonShortHeight = 48;
+    bool m_paramStackedLayout = false;
+    int m_paramStackThreshold = 520;
+    QGridLayout* m_parameterGrid = nullptr;
+    std::vector<ParameterRow> m_parameterRows;
     bool m_devicePlaceholderActive = false;
     QString m_devicePlaceholderText;
 
@@ -90,4 +129,3 @@ private:
 };
 
 } // namespace ui::views
-

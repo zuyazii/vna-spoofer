@@ -19,6 +19,7 @@
 #include <cmath>
 #include <chrono>
 #include <ctime>
+#include <QScroller>
 #include <QSplitter>
 #include <QToolButton>
 #include <QScrollArea>
@@ -565,6 +566,11 @@ void MainView::buildUi() {
     m_sidebarScroll->setWidget(m_sidebar);
     m_sidebarScroll->setMinimumWidth(m_sidebar->minimumWidth());
     m_sidebarScroll->setMaximumWidth(m_sidebar->maximumWidth());
+    if (auto* viewport = m_sidebarScroll->viewport()) {
+        viewport->setAttribute(Qt::WA_AcceptTouchEvents, true);
+        QScroller::grabGesture(viewport, QScroller::TouchGesture);
+        QScroller::grabGesture(viewport, QScroller::LeftMouseButtonGesture);
+    }
 
     auto* rightPane = new QWidget(m_mainSplitter);
     auto* rightPaneLayout = new QVBoxLayout(rightPane);
@@ -913,10 +919,20 @@ QHash<QString, QString> MainView::loadStrings(const QString& path) const {
 
 QString MainView::resolveLocaleKey(const QLocale& locale) const {
     const QString name = locale.name();
-    if (name.startsWith(QStringLiteral("zh_Hant"))) {
+    const auto language = locale.language();
+    const auto script = locale.script();
+    const auto territory = locale.territory();
+
+    const auto isTraditionalRegion = (territory == QLocale::Taiwan || territory == QLocale::HongKong ||
+                                      territory == QLocale::Macao);
+
+    if (name.startsWith(QStringLiteral("zh_Hant"), Qt::CaseInsensitive) ||
+        (language == QLocale::Chinese &&
+         (script == QLocale::TraditionalChineseScript || isTraditionalRegion))) {
         return QStringLiteral("zh_Hant");
     }
-    if (name.startsWith(QStringLiteral("zh_Hans")) || locale.language() == QLocale::Chinese) {
+    if (name.startsWith(QStringLiteral("zh_Hans"), Qt::CaseInsensitive) ||
+        language == QLocale::Chinese) {
         return QStringLiteral("zh_Hans");
     }
     return QStringLiteral("en");

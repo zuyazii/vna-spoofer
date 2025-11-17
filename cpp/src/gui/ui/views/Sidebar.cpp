@@ -2,8 +2,10 @@
 
 #include "../../ui/theme/DesignTokens.hpp"
 
+#include <algorithm>
 #include <QAbstractItemView>
 #include <QAbstractSpinBox>
+#include <QBoxLayout>
 #include <QCursor>
 #include <QDoubleSpinBox>
 #include <QFrame>
@@ -14,8 +16,10 @@
 #include <QItemSelectionModel>
 #include <QListView>
 #include <QPushButton>
+#include <QResizeEvent>
 #include <QSignalBlocker>
 #include <QStringListModel>
+#include <QScroller>
 #include <QToolButton>
 #include <QVBoxLayout>
 #include <QSize>
@@ -33,6 +37,7 @@ constexpr double kThresholdMin = -120.0;
 constexpr double kThresholdMax = 20.0;
 
 constexpr int kSectionSpacing = 36;
+constexpr int kParamCompactWidthThreshold = 420;
 
 } // namespace
 
@@ -44,7 +49,9 @@ Sidebar::Sidebar(QWidget* parent)
     setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
     setFocusPolicy(Qt::StrongFocus);
     setAttribute(Qt::WA_StyledBackground, true);
+    setAttribute(Qt::WA_AcceptTouchEvents, true);
     setProperty("type", "card");
+    m_paramCompactThreshold = kParamCompactWidthThreshold;
 
     buildUi();
     bindSignals();
@@ -308,6 +315,12 @@ void Sidebar::buildUi() {
         list->setUniformItemSizes(true);
         list->setMinimumHeight(120);
         list->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+        list->setVerticalScrollMode(QAbstractItemView::ScrollPerPixel);
+        if (auto* viewport = list->viewport()) {
+            viewport->setAttribute(Qt::WA_AcceptTouchEvents, true);
+            QScroller::grabGesture(viewport, QScroller::TouchGesture);
+            QScroller::grabGesture(viewport, QScroller::LeftMouseButtonGesture);
+        }
         frameLayout->addWidget(list);
 
         *listStore = list;
@@ -326,9 +339,6 @@ void Sidebar::buildUi() {
 
     addSectionHeader(QStringLiteral("sidebar.frequency"), tr("Frequency Range"), &m_frequencyLabel,
                      nullptr, QIcon(), QString());
-
-    auto* frequencyRow = new QHBoxLayout;
-    frequencyRow->setSpacing(12);
 
     const int kControlHeight = 40;
     auto createSpinControl = [this, kControlHeight](QAbstractSpinBox* spin,
@@ -375,33 +385,74 @@ void Sidebar::buildUi() {
         return container;
     };
 
-    m_startSpin = new QDoubleSpinBox(this);
-    m_startSpin->setDecimals(3);
-    m_startSpin->setRange(kStartMin, kStartMax);
-    m_startSpin->setValue(1.000);
-    m_startSpin->setSingleStep(0.010);
-    m_startSpin->setSuffix(QStringLiteral(" GHz"));
-    m_startSpin->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-    frequencyRow->addWidget(createSpinControl(m_startSpin, tr("Start frequency")));
+    auto configureSpin = [](QDoubleSpinBox* spin, double min, double max, double value) {
+        spin->setDecimals(3);
+        spin->setRange(min, max);
+        spin->setValue(value);
+        spin->setSingleStep(0.010);
+        spin->setSuffix(QStringLiteral(" GHz"));
+        spin->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    };
 
-    auto* dash = new QLabel(QStringLiteral("-"), this);
-    dash->setAlignment(Qt::AlignCenter);
-    frequencyRow->addWidget(dash);
+    auto makeFrequencyField = [this, createSpinControl, configureSpin](
+                                  const QString& labelKey,
+                                  const QString& fallback,
+                                  double min,
+                                  double max,
+                                  double value,
+                                  QDoubleSpinBox** spinStore,
+                                  QLabel** labelStore) -> QWidget* {
+        auto* spin = new QDoubleSpinBox(this);
+        configureSpin(spin, min, max, value);
+        QWidget* control = createSpinControl(spin, fallback);
 
-    m_endSpin = new QDoubleSpinBox(this);
-    m_endSpin->setDecimals(3);
-    m_endSpin->setRange(kEndMin, kEndMax);
-    m_endSpin->setValue(6.000);
-    m_endSpin->setSingleStep(0.010);
-    m_endSpin->setSuffix(QStringLiteral(" GHz"));
-    m_endSpin->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-    frequencyRow->addWidget(createSpinControl(m_endSpin, tr("Stop frequency")));
+        auto* wrapper = new QWidget(this);
+        wrapper->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+        auto* layout = new QVBoxLayout(wrapper);
+        layout->setContentsMargins(0, 0, 0, 0);
+        layout->setSpacing(4);
 
-    frequencyRow->setStretch(0, 1);
-    frequencyRow->setStretch(2, 1);
+        layout->addWidget(control);
 
-    rootLayout->addLayout(frequencyRow);
+        auto* label = new QLabel(fallback, wrapper);
+        label->setObjectName(labelKey);
+        label->setProperty("role", "frequencyCaption");
+        label->setAccessibleDescription(fallback);
+        label->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+        label->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+        layout->addWidget(label);
+
+        *spinStore = spin;
+        *labelStore = label;
+        return wrapper;
+    };
+
+    m_startFrequencyField = makeFrequencyField(QStringLiteral("sidebar.startFrequency"),
+                                               tr("Start Frequency"), kStartMin, kStartMax, 1.000,
+                                               &m_startSpin, &m_startFrequencyLabel);
+    m_endFrequencyField = makeFrequencyField(QStringLiteral("sidebar.endFrequency"),
+                                             tr("End Frequency"), kEndMin, kEndMax, 6.000,
+                                             &m_endSpin, &m_endFrequencyLabel);
+
+    m_frequencyLayout = new QBoxLayout(QBoxLayout::LeftToRight);
+    m_frequencyLayout->setContentsMargins(0, 0, 0, 0);
+    m_frequencyLayout->setSpacing(12);
+    m_frequencyLayout->addWidget(m_startFrequencyField, 1);
+
+    m_frequencyDash = new QLabel(QStringLiteral("-"), this);
+    m_frequencyDash->setAlignment(Qt::AlignCenter);
+    m_frequencyDash->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+    m_frequencyLayout->addWidget(m_frequencyDash);
+
+    m_frequencyLayout->addWidget(m_endFrequencyField, 1);
+
+    rootLayout->addLayout(m_frequencyLayout);
     addDivider();
+
+    const int combinedWidth =
+        m_startFrequencyField->sizeHint().width() + m_endFrequencyField->sizeHint().width() + 80;
+    m_frequencyWrapThreshold = std::max(360, combinedWidth);
+    updateFrequencyLayoutMode(width());
 
     addSectionHeader(QStringLiteral("sidebar.points"), tr("Points"), &m_pointsLabel, nullptr, QIcon(),
                      QString());
@@ -422,66 +473,80 @@ void Sidebar::buildUi() {
 
     auto* paramWrapper = new QWidget(this);
     paramWrapper->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
-    auto* paramGrid = new QGridLayout(paramWrapper);
-    paramGrid->setContentsMargins(0, 0, 0, 0);
-    paramGrid->setHorizontalSpacing(8);
-    paramGrid->setVerticalSpacing(12);
+    m_parameterGrid = new QGridLayout(paramWrapper);
+    m_parameterGrid->setContentsMargins(0, 0, 0, 0);
+    m_parameterGrid->setHorizontalSpacing(8);
+    m_parameterGrid->setVerticalSpacing(12);
 
-    const int columnCount = params.size();
-    int index = 0;
+    m_parameterRows.clear();
+    m_parameterRows.reserve(params.size());
+
     for (const QString& param : params) {
-        auto* cell = new QWidget(this);
-        cell->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
-        auto* cellLayout = new QVBoxLayout(cell);
+        ParameterRow row;
+        row.container = new QWidget(this);
+        row.container->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+        auto* cellLayout = new QVBoxLayout(row.container);
         cellLayout->setContentsMargins(0, 0, 0, 0);
         cellLayout->setSpacing(6);
 
-        auto* button = new QPushButton(param, cell);
-        button->setCheckable(true);
-        button->setChecked(true);
-        button->setMinimumSize(56, 56);
-        button->setMaximumHeight(64);
-        button->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-        button->setProperty("role", "param");
-        cellLayout->addWidget(button);
+        auto* controlWidget = new QWidget(row.container);
+        row.controlLayout = new QBoxLayout(QBoxLayout::TopToBottom);
+        row.controlLayout->setContentsMargins(0, 0, 0, 0);
+        row.controlLayout->setSpacing(6);
+        controlWidget->setLayout(row.controlLayout);
 
-        auto* thresholdRow = new QHBoxLayout;
-        thresholdRow->setContentsMargins(0, 0, 0, 0);
-        thresholdRow->setSpacing(4);
+        row.button = new QPushButton(param, controlWidget);
+        row.button->setCheckable(true);
+        row.button->setChecked(true);
+        row.button->setMinimumHeight(m_paramButtonTallHeight);
+        row.button->setMaximumHeight(m_paramButtonTallHeight);
+        row.button->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+        row.button->setProperty("role", "param");
+        row.controlLayout->addWidget(row.button);
 
-        auto* spin = new QDoubleSpinBox(cell);
-        spin->setDecimals(3);
-        spin->setButtonSymbols(QAbstractSpinBox::NoButtons);
-        spin->setRange(kThresholdMin, kThresholdMax);
-        spin->setSingleStep(0.100);
-        spin->setSuffix(QStringLiteral(" dB"));
-        spin->setAlignment(Qt::AlignCenter);
-        spin->setMinimumWidth(60);
-        spin->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-        spin->setValue(-20.000);
-        spin->setMinimumHeight(32);
-        spin->setProperty("paramName", param);
-        thresholdRow->addWidget(spin);
+        auto* spinWrapper = new QWidget(controlWidget);
+        auto* spinLayout = new QHBoxLayout(spinWrapper);
+        spinLayout->setContentsMargins(0, 0, 0, 0);
+        spinLayout->setSpacing(4);
 
-        cellLayout->addLayout(thresholdRow);
+        row.spin = new QDoubleSpinBox(spinWrapper);
+        row.spin->setDecimals(3);
+        row.spin->setButtonSymbols(QAbstractSpinBox::NoButtons);
+        row.spin->setRange(kThresholdMin, kThresholdMax);
+        row.spin->setSingleStep(0.100);
+        row.spin->setSuffix(QStringLiteral(" dB"));
+        row.spin->setAlignment(Qt::AlignCenter);
+        row.spin->setMinimumWidth(60);
+        row.spin->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+        row.spin->setValue(-20.000);
+        row.spin->setMinimumHeight(32);
+        row.spin->setProperty("paramName", param);
+        spinLayout->addWidget(row.spin);
 
-        auto* caption = new QLabel(tr("threshold"), cell);
-        caption->setAlignment(Qt::AlignHCenter);
-        caption->setProperty("role", "caption");
-        cellLayout->addWidget(caption);
+        row.inputContainer = new QWidget(controlWidget);
+        row.inputLayout = new QVBoxLayout(row.inputContainer);
+        row.inputLayout->setContentsMargins(0, 0, 0, 0);
+        row.inputLayout->setSpacing(2);
+        row.inputLayout->addWidget(spinWrapper);
 
-        const int row = index / columnCount;
-        const int column = index % columnCount;
-        paramGrid->addWidget(cell, row, column);
-        ++index;
+        row.caption = new QLabel(tr("threshold"), row.inputContainer);
+        row.caption->setAlignment(Qt::AlignLeft);
+        row.caption->setProperty("role", "caption");
+        row.inputLayout->addWidget(row.caption);
 
-        m_paramButtons.insert(param, button);
-        m_thresholds.insert(param, spin);
-        m_thresholdCaptions.insert(param, caption);
+        row.controlLayout->addWidget(row.inputContainer);
+        cellLayout->addWidget(controlWidget);
+
+        m_parameterRows.push_back(row);
+
+        m_paramButtons.insert(param, row.button);
+        m_thresholds.insert(param, row.spin);
+        m_thresholdCaptions.insert(param, row.caption);
     }
 
-    for (int c = 0; c < columnCount; ++c) {
-        paramGrid->setColumnStretch(c, 1);
+    for (int c = 0; c < params.size(); ++c) {
+        m_parameterGrid->setColumnStretch(c, 1);
+        m_parameterGrid->addWidget(m_parameterRows[c].container, 0, c);
     }
     rootLayout->addWidget(paramWrapper);
     addDivider();
@@ -506,6 +571,7 @@ void Sidebar::buildUi() {
 
     rootLayout->addLayout(buttonRow);
     rootLayout->addStretch(1);
+    updateParameterLayoutMode(width());
 }
 
 void Sidebar::bindSignals() {
@@ -574,6 +640,107 @@ void Sidebar::bindSignals() {
     }
 }
 
+void Sidebar::resizeEvent(QResizeEvent* event) {
+    QWidget::resizeEvent(event);
+    const int newWidth = event->size().width();
+    updateFrequencyLayoutMode(newWidth);
+    updateParameterLayoutMode(newWidth);
+}
+
+void Sidebar::updateFrequencyLayoutMode(int availableWidth) {
+    if (m_frequencyWrapThreshold <= 0 || !m_frequencyLayout || !m_frequencyDash ||
+        !m_startFrequencyField || !m_endFrequencyField) {
+        return;
+    }
+
+    const bool stacked = availableWidth < m_frequencyWrapThreshold;
+    if (stacked == m_frequencyStacked) {
+        return;
+    }
+    m_frequencyStacked = stacked;
+
+    if (stacked) {
+        m_frequencyLayout->setDirection(QBoxLayout::TopToBottom);
+        m_frequencyLayout->setSpacing(16);
+        m_frequencyDash->setVisible(false);
+    } else {
+        m_frequencyLayout->setDirection(QBoxLayout::LeftToRight);
+        m_frequencyLayout->setSpacing(12);
+        m_frequencyDash->setVisible(true);
+    }
+}
+
+void Sidebar::updateParameterLayoutMode(int availableWidth) {
+    if (!m_parameterGrid || m_parameterRows.empty()) {
+        updateParameterButtonSizing(availableWidth);
+        return;
+    }
+
+    const int threshold = m_paramStackThreshold > 0 ? m_paramStackThreshold : 520;
+    const bool stacked = availableWidth < threshold;
+    if (stacked != m_paramStackedLayout) {
+        m_paramStackedLayout = stacked;
+
+        for (const ParameterRow& row : m_parameterRows) {
+            if (row.container) {
+                m_parameterGrid->removeWidget(row.container);
+            }
+        }
+
+        for (int i = 0; i < static_cast<int>(m_parameterRows.size()); ++i) {
+            ParameterRow& row = m_parameterRows[static_cast<std::size_t>(i)];
+            if (!row.container) {
+                continue;
+            }
+            const int targetRow = stacked ? i : 0;
+            const int targetColumn = stacked ? 0 : i;
+            m_parameterGrid->addWidget(row.container, targetRow, targetColumn);
+            if (row.controlLayout) {
+                row.controlLayout->setDirection(stacked ? QBoxLayout::LeftToRight
+                                                        : QBoxLayout::TopToBottom);
+                row.controlLayout->setSpacing(stacked ? 12 : 6);
+            }
+        }
+
+        if (stacked) {
+            m_parameterGrid->setColumnStretch(0, 1);
+            for (int c = 1; c < static_cast<int>(m_parameterRows.size()); ++c) {
+                m_parameterGrid->setColumnStretch(c, 0);
+            }
+        } else {
+            for (int c = 0; c < static_cast<int>(m_parameterRows.size()); ++c) {
+                m_parameterGrid->setColumnStretch(c, 1);
+            }
+        }
+    }
+
+    updateParameterButtonSizing(availableWidth);
+}
+
+void Sidebar::updateParameterButtonSizing(int availableWidth) {
+    if (m_paramButtons.isEmpty()) {
+        return;
+    }
+    const int threshold = m_paramCompactThreshold > 0 ? m_paramCompactThreshold
+                                                      : kParamCompactWidthThreshold;
+    const bool compact = availableWidth < threshold;
+    if (compact == m_paramButtonsCompact) {
+        return;
+    }
+    m_paramButtonsCompact = compact;
+
+    const int minHeight = compact ? m_paramButtonShortHeight : m_paramButtonTallHeight;
+    const int maxHeight = compact ? m_paramButtonShortHeight : m_paramButtonTallHeight;
+
+    for (QPushButton* button : m_paramButtons) {
+        if (!button) {
+            continue;
+        }
+        button->setMinimumHeight(minHeight);
+        button->setMaximumHeight(maxHeight);
+    }
+}
+
 void Sidebar::updateSpinLocale() {
     const QList<QDoubleSpinBox*> doubles{m_startSpin, m_endSpin};
     for (QDoubleSpinBox* spin : doubles) {
@@ -591,8 +758,16 @@ void Sidebar::updateSectionTitles() {
     setLabelText(QStringLiteral("sidebar.vna"), m_vnaLabel, tr("VNA"));
     setLabelText(QStringLiteral("sidebar.calibration"), m_calibrationLabel, tr("Calibration"));
     setLabelText(QStringLiteral("sidebar.frequency"), m_frequencyLabel, tr("Frequency Range"));
+    setLabelText(QStringLiteral("sidebar.startFrequency"), m_startFrequencyLabel, tr("Start Frequency"));
+    setLabelText(QStringLiteral("sidebar.endFrequency"), m_endFrequencyLabel, tr("End Frequency"));
     setLabelText(QStringLiteral("sidebar.points"), m_pointsLabel, tr("Points"));
     setLabelText(QStringLiteral("sidebar.parameters"), m_parametersLabel, tr("S-Parameters"));
+    if (m_startFrequencyField && m_endFrequencyField) {
+        const int combinedWidth =
+            m_startFrequencyField->sizeHint().width() + m_endFrequencyField->sizeHint().width() + 80;
+        m_frequencyWrapThreshold = std::max(360, combinedWidth);
+        updateFrequencyLayoutMode(width());
+    }
 }
 
 QString Sidebar::trKey(const QString& key, const QString& fallback) const {
