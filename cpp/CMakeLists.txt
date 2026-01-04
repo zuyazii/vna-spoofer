@@ -92,15 +92,15 @@ target_link_libraries(librevna-cli
 
 install(TARGETS librevna-cli RUNTIME DESTINATION bin)
 
-set(QT_REQUIRED_COMPONENTS Widgets Charts)
+set(QT_REQUIRED_COMPONENTS Widgets)
 find_package(Qt6 COMPONENTS ${QT_REQUIRED_COMPONENTS} QUIET)
 
 if(Qt6_FOUND)
-    set(QT_LIBS Qt6::Widgets Qt6::Charts)
+    set(QT_LIBS Qt6::Widgets)
 elseif(NOT Qt6_FOUND)
     find_package(Qt5 COMPONENTS ${QT_REQUIRED_COMPONENTS} QUIET)
     if(Qt5_FOUND)
-        set(QT_LIBS Qt5::Widgets Qt5::Charts)
+        set(QT_LIBS Qt5::Widgets)
     endif()
 endif()
 
@@ -108,11 +108,6 @@ if(QT_LIBS)
     set(GUI_SOURCES
         src/gui/main.cpp
         src/gui/ui/theme/ThemeLoader.cpp
-        src/gui/ui/widgets/PlotView.cpp
-        src/gui/ui/widgets/ColorPopover.cpp
-        src/gui/ui/widgets/SeriesCheck.cpp
-        src/gui/ui/views/Sidebar.cpp
-        src/gui/ui/views/BottomPanel.cpp
         src/gui/ui/views/MainView.cpp
         src/gui/resources.qrc
     )
